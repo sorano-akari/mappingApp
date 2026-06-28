@@ -12,11 +12,15 @@
         body { font-family: sans-serif; margin: 0; padding: 0; background: #f4f5f7; display: flex; flex-direction: column; height: 100vh; }
         #control-panel { padding: 10px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 1000; text-align: center; }
         
-        /* ボタンを2つ並べるスタイル */
-        .btn-container { display: flex; gap: 10px; max-width: 500px; margin: 0 auto 5px auto; }
-        .btn-log { flex: 1; height: 60px; font-size: 18px; font-weight: bold; color: white; border: none; border-radius: 10px; cursor: pointer; }
-        .btn-pickup { background: #28a745; } /* 乗車は緑 */
-        .btn-dropoff { background: #dc3545; } /* 降車は赤 */
+        /* ボタンレイアウトの調整 */
+        .btn-main-container { max-width: 500px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+        .btn-current { width: 100%; height: 45px; font-size: 16px; font-weight: bold; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .btn-current:active { background: #0056b3; }
+        
+        .btn-container { display: flex; gap: 10px; }
+        .btn-log { flex: 1; height: 55px; font-size: 18px; font-weight: bold; color: white; border: none; border-radius: 10px; cursor: pointer; }
+        .btn-pickup { background: #28a745; }
+        .btn-dropoff { background: #dc3545; }
         
         #map { flex-grow: 1; width: 100%; }
         
@@ -28,6 +32,9 @@
         input[type=range] { flex-grow: 1; }
         #time-range-display { color: #007bff; font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 5px; }
         
+        .options-container { display: flex; justify-content: center; align-items: center; gap: 15px; margin: 8px 0; font-size: 14px; font-weight: bold; background: #e9ecef; padding: 5px; border-radius: 5px; }
+        .options-container input { width: 18px; height: 18px; cursor: pointer; }
+
         .legend { font-size: 12px; display: flex; justify-content: space-around; flex-wrap: wrap; margin-top: 10px; padding: 5px; background: #eee; border-radius: 5px; }
         .delete-btn { background: #dc3545; color: white; border: none; border-radius: 3px; padding: 5px 8px; font-size: 12px; cursor: pointer; margin-top: 5px; width: 100%; }
         
@@ -39,11 +46,15 @@
 <body>
 
     <div id="control-panel">
-        <div class="btn-container">
-            <button class="btn-log btn-pickup" onclick="recordLocation('乗車')">ここで乗車！</button>
-            <button class="btn-log btn-dropoff" onclick="recordLocation('降車')">ここで降車！</button>
+        <div class="btn-main-container">
+            <button class="btn-current" onclick="showMyLocation()">🧭 現在地を表示 (中心に移動)</button>
+            
+            <div class="btn-container">
+                <button class="btn-log btn-pickup" onclick="recordLocation('乗車')">ここで乗車！</button>
+                <button class="btn-log btn-dropoff" onclick="recordLocation('降車')">ここで降車！</button>
+            </div>
         </div>
-        <div id="status" style="font-size:12px; color:#666;">ボタンを押すと現在地をプロットします</div>
+        <div id="status" style="font-size:12px; color:#666; margin-top: 5px;">ボタンを押すと現在地をプロットします</div>
     </div>
 
     <div id="map"></div>
@@ -62,6 +73,13 @@
                 <input type="range" id="end-time" min="0" max="24" value="24" oninput="updateTimeFilter()">
                 <span id="end-val" style="width:30px;">24時</span>
             </div>
+        </div>
+
+        <div class="options-container">
+            <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                <input type="checkbox" id="show-lines-check" checked onchange="updateTimeFilter()">
+                乗降を結ぶ線を表示する
+            </label>
         </div>
         
         <div class="legend">
@@ -92,12 +110,48 @@
         }).addTo(map);
 
         let markersLayer = L.layerGroup().addTo(map);
+        let linesLayer = L.layerGroup().addTo(map);
+        
+        // 現在地ピン専用の独立したレイヤー
+        let myLocationLayer = L.layerGroup().addTo(map);
 
         const dayColors = {
             '月': 'red', '火': 'blue', '水': 'green', '木': 'orange', '金': 'purple', '土': 'brown', '日': 'pink'
         };
 
         loadMapData(0, 24);
+
+        // 【新規】現在地を取得してマップの中心にする関数
+        function showMyLocation() {
+            document.getElementById('status').innerText = "現在地を取得中...";
+            if (!navigator.geolocation) return;
+
+            navigator.geolocation.getCurrentPosition((position) => {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+
+                // 前回表示した現在地ピンを一旦消去
+                myLocationLayer.clearLayers();
+
+                // あなたの現在地を示す「黒いピン」を作成
+                const myIcon = L.divIcon({
+                    className: 'my-location-icon',
+                    html: `<div style="background-color: #333; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 8px rgba(0,0,0,0.5);"></div>`,
+                    iconSize: [14, 14],
+                    iconAnchor: [7, 7]
+                });
+
+                L.marker([lat, lng], { icon: myIcon })
+                 .bindPopup("<b>📍 あなたの現在地</b>")
+                 .addTo(myLocationLayer);
+
+                // マップを現在地中心に移動させ、少しズームする（15レベル）
+                map.setView([lat, lng], 15);
+                document.getElementById('status').innerText = "現在地を表示しました";
+            }, (err) => {
+                document.getElementById('status').innerText = "GPSエラー: " + err.message;
+            }, { enableHighAccuracy: true });
+        }
 
         function recordLocation(type) {
             document.getElementById('status').innerText = "GPS取得中...";
@@ -116,7 +170,6 @@
                 const timestamp = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()} ${hour}:${min}`;
                 const id = now.getTime(); 
 
-                // type（乗車 または 降車）をオブジェクトに含める
                 const newRecord = { id: id, type: type, timestamp: timestamp, day: dayOfWeek, hour: hour, lat: lat, lng: lng };
                 let currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
                 currentLog.push(newRecord);
@@ -133,21 +186,20 @@
 
         function loadMapData(startHour, endHour) {
             markersLayer.clearLayers();
+            linesLayer.clearLayers(); 
+            
             const currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
+            const showLines = document.getElementById('show-lines-check').checked;
 
             currentLog.forEach(item => {
                 const h = item.hour;
 
                 if (h >= startHour && h < endHour) {
                     const color = dayColors[item.day] || 'black';
-                    
-                    // 【ポイント】乗車か降車かでピンのデザイン（HTML/CSS）を変える
                     let htmlStyle = "";
                     if (item.type === '降車') {
-                        // 降車：背景白、枠線に曜日の色（中抜き白丸）
                         htmlStyle = `<div style="background-color: white; width: 10px; height: 10px; border-radius: 50%; border: 3px solid ${color}; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`;
                     } else {
-                        // 乗車：全面曜日の色で塗りつぶし
                         htmlStyle = `<div style="background-color: ${color}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`;
                     }
 
@@ -172,6 +224,35 @@
                      .addTo(markersLayer);
                 }
             });
+
+            if (showLines) {
+                const sortedLog = [...currentLog].sort((a, b) => a.id - b.id);
+                
+                sortedLog.forEach(dropoffItem => {
+                    if (dropoffItem.type === '降車') {
+                        let bestPickup = null;
+                        
+                        for (let i = sortedLog.indexOf(dropoffItem) - 1; i >= 0; i--) {
+                            if (sortedLog[i].type === '乗車') {
+                                bestPickup = sortedLog[i];
+                                break;
+                            }
+                        }
+
+                        if (bestPickup) {
+                            const hDrop = dropoffItem.hour;
+                            const hPick = bestPickup.hour;
+                            if (hDrop >= startHour && hDrop < endHour && hPick >= startHour && hPick < endHour) {
+                                const latlngs = [
+                                    [bestPickup.lat, bestPickup.lng],
+                                    [dropoffItem.lat, dropoffItem.lng]
+                                ];
+                                L.polyline(latlngs, { color: '#007bff', weight: 3, opacity: 0.6, lineCap: 'round' }).addTo(linesLayer);
+                            }
+                        }
+                    }
+                });
+            }
         }
 
         function updateTimeFilter() {
@@ -233,7 +314,7 @@
                     if (!line) continue;
 
                     const parts = line.split(",");
-                    if (parts.length < 7) continue; // 列数が7つ（ID, タイプ含む）あるか
+                    if (parts.length < 7) continue;
 
                     const id = parseInt(parts[0]);
                     const type = parts[1];
