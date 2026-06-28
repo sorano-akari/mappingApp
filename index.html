@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>乗降マップ</title>
+    
+    <link rel="stylesheet" href="./leaflet.css" />
+    <script src="./leaflet.js"></script>
+    
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 0; background: #f4f5f7; display: flex; flex-direction: column; height: 100vh; }
+        #control-panel { padding: 10px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 1000; text-align: center; }
+        
+        /* ボタンを2つ並べるスタイル */
+        .btn-container { display: flex; gap: 10px; max-width: 500px; margin: 0 auto 5px auto; }
+        .btn-log { flex: 1; height: 60px; font-size: 18px; font-weight: bold; color: white; border: none; border-radius: 10px; cursor: pointer; }
+        .btn-pickup { background: #28a745; } /* 乗車は緑 */
+        .btn-dropoff { background: #dc3545; } /* 降車は赤 */
+        
+        #map { flex-grow: 1; width: 100%; }
+        
+        /* 下部コントロール */
+        #filter-panel { padding: 15px; background: white; box-shadow: 0 -2px 5px rgba(0,0,0,0.1); z-index: 1000; }
+        .range-container { margin: 10px 0; display: flex; flex-direction: column; gap: 5px; }
+        .slider-row { display: flex; align-items: center; gap: 10px; }
+        .slider-row label { width: 80px; font-weight: bold; font-size: 14px; }
+        input[type=range] { flex-grow: 1; }
+        #time-range-display { color: #007bff; font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 5px; }
+        
+        .legend { font-size: 12px; display: flex; justify-content: space-around; flex-wrap: wrap; margin-top: 10px; padding: 5px; background: #eee; border-radius: 5px; }
+        .delete-btn { background: #dc3545; color: white; border: none; border-radius: 3px; padding: 5px 8px; font-size: 12px; cursor: pointer; margin-top: 5px; width: 100%; }
+        
+        .io-container { display: flex; gap: 10px; margin-top: 10px; }
+        .btn-io { flex: 1; height: 35px; font-size: 13px; border-radius: 5px; border: 1px solid #ccc; background: #f8f9fa; cursor: pointer; font-weight: bold; text-align: center; line-height: 33px; }
+        #file-input { display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="control-panel">
+        <div class="btn-container">
+            <button class="btn-log btn-pickup" onclick="recordLocation('乗車')">ここで乗車！</button>
+            <button class="btn-log btn-dropoff" onclick="recordLocation('降車')">ここで降車！</button>
+        </div>
+        <div id="status" style="font-size:12px; color:#666;">ボタンを押すと現在地をプロットします</div>
+    </div>
+
+    <div id="map"></div>
+
+    <div id="filter-panel">
+        <div id="time-range-display">表示範囲: 0:00 〜 24:00</div>
+        
+        <div class="range-container">
+            <div class="slider-row">
+                <label>開始時刻:</label>
+                <input type="range" id="start-time" min="0" max="24" value="0" oninput="updateTimeFilter()">
+                <span id="start-val" style="width:30px;">0時</span>
+            </div>
+            <div class="slider-row">
+                <label>終了時刻:</label>
+                <input type="range" id="end-time" min="0" max="24" value="24" oninput="updateTimeFilter()">
+                <span id="end-val" style="width:30px;">24時</span>
+            </div>
+        </div>
+        
+        <div class="legend">
+            <span><span style="color:red;">●</span>月</span>
+            <span><span style="color:blue;">●</span>火</span>
+            <span><span style="color:green;">●</span>水</span>
+            <span><span style="color:orange;">●</span>木</span>
+            <span><span style="color:purple;">●</span>金</span>
+            <span><span style="color:brown;">●</span>土</span>
+            <span><span style="color:pink;">●</span>日</span>
+        </div>
+        <div style="font-size:11px; text-align:center; color:#555; margin-top:5px;">※ 塗りつぶし＝乗車 / 中抜き白丸＝降車</div>
+        
+        <div class="io-container">
+            <div class="btn-io" onclick="exportCSV()">CSV書き出し</div>
+            <label class="btn-io">
+                CSV読み込み
+                <input type="file" id="file-input" accept=".csv" onchange="importCSV(this)">
+            </label>
+        </div>
+    </div>
+
+    <script>
+        const map = L.map('map').setView([33.5902, 130.4207], 13);
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        let markersLayer = L.layerGroup().addTo(map);
+
+        const dayColors = {
+            '月': 'red', '火': 'blue', '水': 'green', '木': 'orange', '金': 'purple', '土': 'brown', '日': 'pink'
+        };
+
+        loadMapData(0, 24);
+
+        function recordLocation(type) {
+            document.getElementById('status').innerText = "GPS取得中...";
+            if (!navigator.geolocation) return;
+
+            navigator.geolocation.getCurrentPosition((position) => {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                const now = new Date();
+                
+                const days = ['日', '月', '火', '水', '木', '金', '土'];
+                const dayOfWeek = days[now.getDay()];
+                const hour = now.getHours();
+                const min = String(now.getMinutes()).padStart(2, '0');
+                
+                const timestamp = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()} ${hour}:${min}`;
+                const id = now.getTime(); 
+
+                // type（乗車 または 降車）をオブジェクトに含める
+                const newRecord = { id: id, type: type, timestamp: timestamp, day: dayOfWeek, hour: hour, lat: lat, lng: lng };
+                let currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
+                currentLog.push(newRecord);
+                localStorage.setItem('taxi_map_log', JSON.stringify(currentLog));
+
+                document.getElementById('status').innerText = `記録成功(${type}): ${dayOfWeek}曜 ${hour}:${min}`;
+                
+                updateTimeFilter();
+                map.setView([lat, lng], 15);
+            }, (err) => {
+                document.getElementById('status').innerText = "GPSエラー: " + err.message;
+            }, { enableHighAccuracy: true });
+        }
+
+        function loadMapData(startHour, endHour) {
+            markersLayer.clearLayers();
+            const currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
+
+            currentLog.forEach(item => {
+                const h = item.hour;
+
+                if (h >= startHour && h < endHour) {
+                    const color = dayColors[item.day] || 'black';
+                    
+                    // 【ポイント】乗車か降車かでピンのデザイン（HTML/CSS）を変える
+                    let htmlStyle = "";
+                    if (item.type === '降車') {
+                        // 降車：背景白、枠線に曜日の色（中抜き白丸）
+                        htmlStyle = `<div style="background-color: white; width: 10px; height: 10px; border-radius: 50%; border: 3px solid ${color}; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`;
+                    } else {
+                        // 乗車：全面曜日の色で塗りつぶし
+                        htmlStyle = `<div style="background-color: ${color}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`;
+                    }
+
+                    const markerIcon = L.divIcon({
+                        className: 'custom-div-icon',
+                        html: htmlStyle,
+                        iconSize: [12, 12],
+                        iconAnchor: [6, 6]
+                    });
+
+                    const popupText = `
+                        <div>
+                            <b>[${item.type || '乗車'}] ${item.timestamp} (${item.day}曜)</b><br>
+                            緯度: ${item.lat.toFixed(4)}<br>
+                            経度: ${item.lng.toFixed(4)}<br>
+                            <button class="delete-btn" onclick="deleteRecord(${item.id})">このデータを削除</button>
+                        </div>
+                    `;
+
+                    L.marker([item.lat, item.lng], { icon: markerIcon })
+                     .bindPopup(popupText)
+                     .addTo(markersLayer);
+                }
+            });
+        }
+
+        function updateTimeFilter() {
+            let start = parseInt(document.getElementById('start-time').value);
+            let end = parseInt(document.getElementById('end-time').value);
+
+            if (start > end) {
+                end = start;
+                document.getElementById('end-time').value = end;
+            }
+
+            document.getElementById('start-val').innerText = start + "時";
+            document.getElementById('end-val').innerText = end + "時";
+            document.getElementById('time-range-display').innerText = `表示範囲: ${start}:00 〜 ${end}:00`;
+
+            loadMapData(start, end);
+        }
+
+        function deleteRecord(id) {
+            if (!confirm("このプロットデータを削除してもよろしいですか？")) return;
+
+            let currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
+            currentLog = currentLog.filter(item => item.id !== id);
+            localStorage.setItem('taxi_map_log', JSON.stringify(currentLog));
+
+            updateTimeFilter();
+        }
+
+        function exportCSV() {
+            const currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
+            if(currentLog.length === 0) return alert("エクスポートするデータがありません");
+            
+            let csv = "ID,タイプ,日時,曜日,時間,緯度,経度\n";
+            currentLog.forEach(r => csv += `${r.id},${r.type || '乗車'},${r.timestamp},${r.day},${r.hour},${r.lat},${r.lng}\n`);
+            
+            const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+            const blob = new Blob([bom, csv], { type: "text/csv;charset=utf-8;" });
+            
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.setAttribute("download", `taxi_data_backup.csv`);
+            link.click();
+        }
+
+        function importCSV(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result;
+                const lines = text.split("\n");
+                
+                let currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
+                let importCount = 0;
+
+                for (let i = 1; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (!line) continue;
+
+                    const parts = line.split(",");
+                    if (parts.length < 7) continue; // 列数が7つ（ID, タイプ含む）あるか
+
+                    const id = parseInt(parts[0]);
+                    const type = parts[1];
+                    const timestamp = parts[2];
+                    const day = parts[3];
+                    const hour = parseInt(parts[4]);
+                    const lat = parseFloat(parts[5]);
+                    const lng = parseFloat(parts[6]);
+
+                    if (currentLog.some(item => item.id === id)) continue;
+
+                    currentLog.push({ id: id, type: type, timestamp: timestamp, day: day, hour: hour, lat: lat, lng: lng });
+                    importCount++;
+                }
+
+                localStorage.setItem('taxi_map_log', JSON.stringify(currentLog));
+                alert(`${importCount} 件のデータを正常にインポートしました。`);
+                updateTimeFilter();
+                input.value = "";
+            };
+            reader.readAsText(file);
+        }
+    </script>
+</body>
+</html>
