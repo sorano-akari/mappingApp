@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>マップアプリ</title>
     
+    <!-- ローカルのLeafletを読み込み -->
     <link rel="stylesheet" href="./leaflet.css" />
     <script src="./leaflet.js"></script>
     
@@ -13,36 +14,45 @@
         #control-panel { padding: 10px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 1000; text-align: center; }
         
         .btn-main-container { max-width: 500px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
-        .btn-current { width: 100%; height: 45px; font-size: 16px; font-weight: bold; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .btn-current { width: 100%; height: 40px; font-size: 15px; font-weight: bold; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; }
         
         .btn-container { display: flex; gap: 10px; }
-        .btn-log { flex: 1; height: 55px; font-size: 18px; font-weight: bold; color: white; border: none; border-radius: 10px; cursor: pointer; }
+        .btn-log { flex: 1; height: 55px; font-size: 15px; font-weight: bold; color: white; border: none; border-radius: 10px; cursor: pointer; transition: opacity 0.2s; }
         .btn-pickup { background: #28a745; }
+        .btn-via { background: #ffc107; color: #212529; }
         .btn-dropoff { background: #dc3545; }
+        
+        .btn-log:disabled, .btn-current:disabled { background: #6c757d !important; color: #fff !important; opacity: 0.6; cursor: not-allowed; }
         
         #map { flex-grow: 1; width: 100%; }
         
         /* 下部コントロール */
-        #filter-panel { padding: 15px; background: white; box-shadow: 0 -2px 5px rgba(0,0,0,0.1); z-index: 1000; }
-        .range-container { margin: 10px 0; display: flex; flex-direction: column; gap: 5px; }
+        #filter-panel { padding: 12px; background: white; box-shadow: 0 -2px 5px rgba(0,0,0,0.1); z-index: 1000; display: flex; flex-direction: column; gap: 8px; }
+        .range-container { display: flex; flex-direction: column; gap: 4px; }
         .slider-row { display: flex; align-items: center; gap: 10px; }
-        .slider-row label { width: 80px; font-weight: bold; font-size: 14px; }
+        .slider-row label { width: 75px; font-weight: bold; font-size: 13px; }
         input[type=range] { flex-grow: 1; }
-        #time-range-display { color: #007bff; font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 5px; }
+        #time-range-display { color: #007bff; font-size: 16px; font-weight: bold; text-align: center; }
         
-        /* 【新規】天気フィルターのスタイル */
-        .weather-filter-container { display: flex; justify-content: center; gap: 5px; margin: 8px 0; }
-        .btn-weather { flex: 1; height: 35px; font-size: 13px; font-weight: bold; border: 1px solid #ccc; border-radius: 5px; background: #f8f9fa; cursor: pointer; }
-        .btn-weather.active { background: #17a2b8; color: white; border-color: #117a8b; }
+        .weather-filter-container { display: flex; justify-content: center; gap: 20px; background: #f1f3f5; padding: 6px; border-radius: 5px; font-size: 13px; font-weight: bold; }
+        .weather-label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+        .weather-label input { width: 16px; height: 16px; }
 
-        .options-container { display: flex; justify-content: center; align-items: center; gap: 15px; margin: 8px 0; font-size: 14px; font-weight: bold; background: #e9ecef; padding: 5px; border-radius: 5px; }
-        .options-container input { width: 18px; height: 18px; cursor: pointer; }
+        .temp-filter-container { display: flex; align-items: center; gap: 8px; background: #fff3cd; padding: 6px; border-radius: 5px; font-size: 13px; font-weight: bold; }
+        .temp-radio-group { display: flex; flex-direction: column; gap: 2px; font-size: 11px; }
+        .temp-radio-label { display: flex; align-items: center; gap: 2px; cursor: pointer; }
 
-        .legend { font-size: 12px; display: flex; justify-content: space-around; flex-wrap: wrap; margin-top: 10px; padding: 5px; background: #eee; border-radius: 5px; }
+        .options-container { display: flex; justify-content: center; align-items: center; gap: 15px; font-size: 13px; font-weight: bold; background: #e9ecef; padding: 4px; border-radius: 5px; margin: 0; }
+        .options-container input { width: 16px; height: 16px; cursor: pointer; }
+
+        .day-filter-container { font-size: 12px; font-weight: bold; display: flex; justify-content: space-around; flex-wrap: wrap; padding: 6px 4px; background: #eee; border-radius: 5px; }
+        .day-label { display: flex; align-items: center; gap: 2px; cursor: pointer; }
+        .day-label input { width: 14px; height: 14px; cursor: pointer; }
+
         .delete-btn { background: #dc3545; color: white; border: none; border-radius: 3px; padding: 5px 8px; font-size: 12px; cursor: pointer; margin-top: 5px; width: 100%; }
         
-        .io-container { display: flex; gap: 10px; margin-top: 10px; }
-        .btn-io { flex: 1; height: 35px; font-size: 13px; border-radius: 5px; border: 1px solid #ccc; background: #f8f9fa; cursor: pointer; font-weight: bold; text-align: center; line-height: 33px; }
+        .io-container { display: flex; gap: 10px; }
+        .btn-io { flex: 1; height: 32px; font-size: 12px; border-radius: 5px; border: 1px solid #ccc; background: #f8f9fa; cursor: pointer; font-weight: bold; text-align: center; line-height: 30px; }
         #file-input { display: none; }
     </style>
 </head>
@@ -50,10 +60,11 @@
 
     <div id="control-panel">
         <div class="btn-main-container">
-            <button class="btn-current" onclick="showMyLocation()">🧭 現在地を表示 (中心に移動)</button>
+            <button class="btn-current" id="btn-current-loc" onclick="showMyLocation()">🧭 現在地を表示 (中心に移動)</button>
             <div class="btn-container">
-                <button class="btn-log btn-pickup" onclick="recordLocation('乗車')">ここで乗車！</button>
-                <button class="btn-log btn-dropoff" onclick="recordLocation('降車')">ここで降車！</button>
+                <button class="btn-log btn-pickup" id="btn-p" onclick="recordLocation('乗車')">ここで乗車！</button>
+                <button class="btn-log btn-via" id="btn-v" onclick="recordLocation('経由降車')">ここで経由降車</button>
+                <button class="btn-log btn-dropoff" id="btn-d" onclick="recordLocation('降車')">ここで降車！</button>
             </div>
         </div>
         <div id="status" style="font-size:12px; color:#666; margin-top: 5px;">ボタンを押すと現在地をプロットします</div>
@@ -68,20 +79,27 @@
             <div class="slider-row">
                 <label>開始時刻:</label>
                 <input type="range" id="start-time" min="0" max="24" value="0" oninput="updateTimeFilter()">
-                <span id="start-val" style="width:30px;">0時</span>
+                <span id="start-val" style="width:25px; font-size:13px;">0時</span>
             </div>
             <div class="slider-row">
                 <label>終了時刻:</label>
                 <input type="range" id="end-time" min="0" max="24" value="24" oninput="updateTimeFilter()">
-                <span id="end-val" style="width:30px;">24時</span>
+                <span id="end-val" style="width:25px; font-size:13px;">24時</span>
             </div>
         </div>
 
         <div class="weather-filter-container">
-            <button class="btn-weather active" id="w-all" onclick="changeWeatherFilter('すべて')">すべて</button>
-            <button class="btn-weather" id="w-sunny" onclick="changeWeatherFilter('晴れ')">☀️ 晴れ</button>
-            <button class="btn-weather" id="w-rainy" onclick="changeWeatherFilter('雨')">☔ 雨</button>
-            <button class="btn-weather" id="w-cloudy" onclick="changeWeatherFilter('曇/雪')">☁️ 曇/雪</button>
+            <label class="weather-label"><input type="checkbox" id="weather-rain" checked onchange="updateTimeFilter()">☔ 雨</label>
+            <label class="weather-label"><input type="checkbox" id="weather-other" checked onchange="updateTimeFilter()">☀️☁️ それ以外</label>
+        </div>
+
+        <div class="temp-filter-container">
+            <div class="temp-radio-group">
+                <label class="temp-radio-label"><input type="radio" name="temp-mode" value="above" checked onchange="updateTimeFilter()">以上</label>
+                <label class="temp-radio-label"><input type="radio" name="temp-mode" value="below" onchange="updateTimeFilter()">以下</label>
+            </div>
+            <span style="font-size:12px; width:45px;" id="temp-val-display">全気温</span>
+            <input type="range" id="temp-slider" min="-5" max="40" value="-5" oninput="updateTimeFilter()">
         </div>
 
         <div class="options-container">
@@ -91,16 +109,16 @@
             </label>
         </div>
         
-        <div class="legend">
-            <span><span style="color:red;">●</span>月</span>
-            <span><span style="color:blue;">●</span>火</span>
-            <span><span style="color:green;">●</span>水</span>
-            <span><span style="color:orange;">●</span>木</span>
-            <span><span style="color:purple;">●</span>金</span>
-            <span><span style="color:brown;">●</span>土</span>
-            <span><span style="color:pink;">●</span>日</span>
+        <!-- 【変更】新・虹の七色カラーラベル -->
+        <div class="day-filter-container">
+            <label class="day-label" style="color: purple;"><input type="checkbox" class="day-check" value="月" checked onchange="updateTimeFilter()">月</label>
+            <label class="day-label" style="color: orange;"><input type="checkbox" class="day-check" value="火" checked onchange="updateTimeFilter()">火</label>
+            <label class="day-label" style="color: deepskyblue;"><input type="checkbox" class="day-check" value="水" checked onchange="updateTimeFilter()">水</label>
+            <label class="day-label" style="color: forestgreen;"><input type="checkbox" class="day-check" value="木" checked onchange="updateTimeFilter()">木</label>
+            <label class="day-label" style="color: gold; text-shadow: 0 0 1px #ccc;"><input type="checkbox" class="day-check" value="金" checked onchange="updateTimeFilter()">金</label>
+            <label class="day-label" style="color: navy;"><input type="checkbox" class="day-check" value="土" checked onchange="updateTimeFilter()">土</label>
+            <label class="day-label" style="color: crimson;"><input type="checkbox" class="day-check" value="日" checked onchange="updateTimeFilter()">日/祝</label>
         </div>
-        <div style="font-size:11px; text-align:center; color:#555; margin-top:5px;">※ 塗りつぶし＝乗車 / 中抜き白丸＝降車</div>
         
         <div class="io-container">
             <div class="btn-io" onclick="exportCSV()">CSV書き出し</div>
@@ -122,16 +140,31 @@
         let linesLayer = L.layerGroup().addTo(map);
         let myLocationLayer = L.layerGroup().addTo(map);
 
-        const dayColors = { '月': 'red', '火': 'blue', '水': 'green', '木': 'orange', '金': 'purple', '土': 'brown', '日': 'pink' };
-        
-        // 現在選択されている天気フィルターの状態
-        let currentWeatherFilter = 'すべて';
+        // 【変更】虹の七色をベースにしたカラーパレットに刷新
+        const dayColors = { 
+            '月': 'purple', 
+            '火': 'orange', 
+            '水': 'deepskyblue', 
+            '木': 'forestgreen', 
+            '金': 'gold', 
+            '土': 'navy', 
+            '日': 'crimson' 
+        };
 
         loadMapData(0, 24);
+
+        function setButtonsDisabled(status) {
+            document.getElementById('btn-current-loc').disabled = status;
+            document.getElementById('btn-p').disabled = status;
+            document.getElementById('btn-v').disabled = status;
+            document.getElementById('btn-d').disabled = status;
+        }
 
         function showMyLocation() {
             document.getElementById('status').innerText = "現在地を取得中...";
             if (!navigator.geolocation) return;
+            
+            setButtonsDisabled(true);
 
             navigator.geolocation.getCurrentPosition((position) => {
                 const lat = position.coords.latitude;
@@ -146,62 +179,92 @@
                 L.marker([lat, lng], { icon: myIcon }).bindPopup("<b>📍 あなたの現在地</b>").addTo(myLocationLayer);
                 map.setView([lat, lng], 15);
                 document.getElementById('status').innerText = "現在地を表示しました";
+                
+                setTimeout(() => { setButtonsDisabled(false); }, 3000);
             }, (err) => {
                 document.getElementById('status').innerText = "GPSエラー: " + err.message;
-            }, { enableHighAccuracy: true });
+                setTimeout(() => { setButtonsDisabled(false); }, 3000);
+            }, { enableHighAccuracy: true, timeout: 10000 });
         }
 
-        // リアルタイムでその場所の天気をAPIから取得する関数（非同期処理）
-        async function fetchWeather(lat, lng) {
+        async function fetchWeatherAndTemp(lat, lng) {
             try {
                 const response = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&timezone=Asia%2FTokyo`);
                 const data = await response.json();
                 const code = data.current_weather.weathercode;
+                const temp = data.current_weather.temperature;
                 
-                // WMO気象コードを使いやすい文言に変換
-                if (code === 0) return '晴れ';
-                if ([1, 2, 3].includes(code)) return '晴れ'; // 晴れ・ほぼ晴れ・薄曇り
-                if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return '雨'; // 霧雨・雨・豪雨
-                if ([71, 73, 75, 77, 85, 86, 95, 96, 99].includes(code)) return '曇/雪'; // 雪・雷雨
-                return '曇/雪'; // その他（45, 48などの霧・曇り）
+                let weatherType = '晴れ';
+                if ([0, 1, 2, 3].includes(code)) weatherType = '晴れ';
+                else if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) weatherType = '雨';
+                else weatherType = '曇/雪';
+
+                return { weather: weatherType, temp: temp };
             } catch (e) {
-                return '晴れ'; // エラー時のフォールバック
+                return { weather: '晴れ', temp: 20.0 };
             }
         }
 
-        // async/await を使って天気取得を待ってから記録するよう変更
+        async function checkIsHoliday(year, month, day) {
+            try {
+                const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/JP`);
+                if (!response.ok) return false;
+                const holidays = await response.json();
+                const targetDateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                return holidays.some(h => h.date === targetDateStr);
+            } catch (e) {
+                return false;
+            }
+        }
+
         async function recordLocation(type) {
-            document.getElementById('status').innerText = "位置情報と天気を取得中...";
+            document.getElementById('status').innerText = "位置・天気・気温・祝日を同時検証中...";
             if (!navigator.geolocation) return;
+
+            setButtonsDisabled(true);
 
             navigator.geolocation.getCurrentPosition(async (position) => {
                 const lat = position.coords.latitude;
                 const lng = position.coords.longitude;
                 
-                // 天気データを自動取得
-                const weather = await fetchWeather(lat, lng);
-
                 const now = new Date();
-                const days = ['日', '月', '火', '水', '木', '金', '土'];
-                const dayOfWeek = days[now.getDay()];
+                const year = now.getFullYear();
+                const month = now.getMonth() + 1;
+                const date = now.getDate();
                 const hour = now.getHours();
                 const min = String(now.getMinutes()).padStart(2, '0');
-                const timestamp = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()} ${hour}:${min}`;
+
+                const [envData, isHoliday] = await Promise.all([
+                    fetchWeatherAndTemp(lat, lng),
+                    checkIsHoliday(year, month, date)
+                ]);
+
+                const days = ['日', '月', '火', '水', '木', '金', '土'];
+                const dayOfWeek = isHoliday ? '日' : days[now.getDay()];
+                
+                const timestamp = `${year}-${month}-${date} ${hour}:${min}`;
                 const id = now.getTime(); 
 
-                // オブジェクトに「weather」を追加
-                const newRecord = { id: id, type: type, timestamp: timestamp, day: dayOfWeek, hour: hour, lat: lat, lng: lng, weather: weather };
+                const newRecord = { 
+                    id: id, type: type, timestamp: timestamp, day: dayOfWeek, 
+                    hour: hour, lat: lat, lng: lng, weather: envData.weather, temp: envData.temp 
+                };
+                
                 let currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
                 currentLog.push(newRecord);
                 localStorage.setItem('taxi_map_log', JSON.stringify(currentLog));
 
-                document.getElementById('status').innerText = `記録成功(${type}): ${dayOfWeek}曜 ${hour}:${min} [天気:${weather}]`;
+                const holidayStr = isHoliday ? " (祝日)" : "";
+                document.getElementById('status').innerText = `記録成功(${type}): ${dayOfWeek}曜${holidayStr} ${hour}:${min} [${envData.weather} / ${envData.temp}℃]`;
                 
                 updateTimeFilter();
                 map.setView([lat, lng], 15);
+                
+                setTimeout(() => { setButtonsDisabled(false); }, 3000);
             }, (err) => {
                 document.getElementById('status').innerText = "GPSエラー: " + err.message;
-            }, { enableHighAccuracy: true });
+                setTimeout(() => { setButtonsDisabled(false); }, 3000);
+            }, { enableHighAccuracy: true, timeout: 10000 });
         }
 
         function loadMapData(startHour, endHour) {
@@ -211,79 +274,120 @@
             const currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
             const showLines = document.getElementById('show-lines-check').checked;
 
-            // 1. フィルターに合致するデータだけを選別
-            const filteredLog = currentLog.filter(item => {
+            const checkedDays = Array.from(document.querySelectorAll('.day-check:checked')).map(cb => cb.value);
+            const filterRain = document.getElementById('weather-rain').checked;
+            const filterOther = document.getElementById('weather-other').checked;
+            
+            const tempMode = document.querySelector('input[name="temp-mode"]:checked').value;
+            const tempThreshold = parseFloat(document.getElementById('temp-slider').value);
+
+            currentLog.forEach(item => {
                 const h = item.hour;
-                const w = item.weather || '晴れ'; // 古いデータ用互換性
+                const w = item.weather || '晴れ';
+                const d = item.day;
+                const t = item.temp !== undefined ? item.temp : 20.0;
 
                 const matchesTime = (h >= startHour && h < endHour);
-                const matchesWeather = (currentWeatherFilter === 'すべて' || w === currentWeatherFilter);
+                const matchesDay = checkedDays.includes(d);
 
-                return matchesTime && matchesWeather;
-            });
+                let matchesWeather = false;
+                if (w === '雨' && filterRain) matchesWeather = true;
+                if ((w === '晴れ' || w === '曇/雪') && filterOther) matchesWeather = true;
 
-            // 2. ピンをプロット
-            filteredLog.forEach(item => {
-                const color = dayColors[item.day] || 'black';
-                let htmlStyle = "";
-                if (item.type === '降車') {
-                    htmlStyle = `<div style="background-color: white; width: 10px; height: 10px; border-radius: 50%; border: 3px solid ${color}; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`;
-                } else {
-                    htmlStyle = `<div style="background-color: ${color}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`;
+                let matchesTemp = true;
+                if (tempThreshold > -5) {
+                    if (tempMode === 'above') matchesTemp = (t >= tempThreshold);
+                    else if (tempMode === 'below') matchesTemp = (t <= tempThreshold);
                 }
 
-                const markerIcon = L.divIcon({
-                    className: 'custom-div-icon',
-                    html: htmlStyle,
-                    iconSize: [12, 12],
-                    iconAnchor: [6, 6]
-                });
+                if (matchesTime && matchesDay && matchesWeather && matchesTemp) {
+                    const color = dayColors[item.day] || 'black';
+                    let htmlStyle = "";
+                    
+                    if (item.type === '降車') {
+                        htmlStyle = `<div style="background-color: white; width: 10px; height: 10px; border-radius: 50%; border: 3px solid ${color}; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`;
+                    } else if (item.type === '経由降車') {
+                        htmlStyle = `<div style="width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 12px solid ${color}; filter: drop-shadow(0px 2px 2px rgba(0,0,0,0.3));"></div>`;
+                    } else {
+                        htmlStyle = `<div style="background-color: ${color}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`;
+                    }
 
-                const popupText = `
-                    <div>
-                        <b>[${item.type || '乗車'}] ${item.timestamp} (${item.day}曜)</b><br>
-                        天気: ${item.weather || '晴れ'}<br>
-                        緯度: ${item.lat.toFixed(4)}<br>
-                        経度: ${item.lng.toFixed(4)}<br>
-                        <button class="delete-btn" onclick="deleteRecord(${item.id})">このデータを削除</button>
-                    </div>
-                `;
+                    const markerIcon = L.divIcon({
+                        className: 'custom-div-icon',
+                        html: htmlStyle,
+                        iconSize: [14, 14],
+                        iconAnchor: [7, 7]
+                    });
 
-                L.marker([item.lat, item.lng], { icon: markerIcon }).bindPopup(popupText).addTo(markersLayer);
+                    const popupText = `
+                        <div style="min-width: 150px;">
+                            <b>[${item.type || '乗車'}] ${item.timestamp} (${item.day}曜)</b><br>
+                            天気: ${item.weather || '晴れ'} (${t.toFixed(1)}℃)<br>
+                            <span style="color: #007bff; font-size:11px;">※長押しで位置の微調整が可能</span><br>
+                            <button class="delete-btn" onclick="deleteRecord(${item.id})">このデータを削除</button>
+                        </div>
+                    `;
+
+                    const marker = L.marker([item.lat, item.lng], { icon: markerIcon });
+                    marker.bindPopup(popupText).addTo(markersLayer);
+
+                    marker.on('popupopen', function() { marker.dragging.enable(); });
+                    marker.on('popupclose', function() { marker.dragging.disable(); });
+
+                    marker.on('dragend', function(e) {
+                        const newLatLng = e.target.getLatLng();
+                        let logs = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
+                        const targetIndex = logs.findIndex(log => log.id === item.id);
+                        
+                        if (targetIndex !== -1) {
+                            logs[targetIndex].lat = newLatLng.lat;
+                            logs[targetIndex].lng = newLatLng.lng;
+                            localStorage.setItem('taxi_map_log', JSON.stringify(logs));
+                            document.getElementById('status').innerText = `位置を微調整しました: [${item.type}]`;
+                            
+                            updateTimeFilter();
+                        }
+                    });
+                }
             });
 
-            // 3. 線を引く（表示されているピン同士のみを結ぶ）
-            if (showLines) {
-                const sortedLog = [...filteredLog].sort((a, b) => a.id - b.id);
-                sortedLog.forEach(dropoffItem => {
-                    if (dropoffItem.type === '降車') {
-                        let bestPickup = null;
-                        for (let i = sortedLog.indexOf(dropoffItem) - 1; i >= 0; i--) {
-                            if (sortedLog[i].type === '乗車') {
-                                bestPickup = sortedLog[i];
-                                break;
-                            }
+            if (showLines && currentLog.length > 1) {
+                const sortedLog = [...currentLog].sort((a, b) => a.id - b.id);
+                let currentTrack = [];
+
+                sortedLog.forEach(item => {
+                    const h = item.hour;
+                    const w = item.weather || '晴れ';
+                    const d = item.day;
+                    const t = item.temp !== undefined ? item.temp : 20.0;
+                    
+                    let matchesWeather = false;
+                    if (w === '雨' && filterRain) matchesWeather = true;
+                    if ((w === '晴れ' || w === '曇/雪') && filterOther) matchesWeather = true;
+
+                    let matchesTemp = true;
+                    if (tempThreshold > -5) {
+                        if (tempMode === 'above') matchesTemp = (t >= tempThreshold);
+                        else if (tempMode === 'below') matchesTemp = (t <= tempThreshold);
+                    }
+
+                    const filterMatch = (h >= startHour && h < endHour && checkedDays.includes(d) && matchesWeather && matchesTemp);
+
+                    if (item.type === '乗車') {
+                        currentTrack = filterMatch ? [[item.lat, item.lng]] : [];
+                    } else if (item.type === '経由降車') {
+                        if (currentTrack.length > 0 && filterMatch) {
+                            currentTrack.push([item.lat, item.lng]);
                         }
-                        if (bestPickup) {
-                            const latlngs = [[bestPickup.lat, bestPickup.lng], [dropoffItem.lat, dropoffItem.lng]];
-                            L.polyline(latlngs, { color: '#007bff', weight: 3, opacity: 0.6, lineCap: 'round' }).addTo(linesLayer);
+                    } else if (item.type === '降車') {
+                        if (currentTrack.length > 0 && filterMatch) {
+                            currentTrack.push([item.lat, item.lng]);
+                            L.polyline(currentTrack, { color: '#007bff', weight: 3, opacity: 0.6, lineCap: 'round' }).addTo(linesLayer);
                         }
+                        currentTrack = [];
                     }
                 });
             }
-        }
-
-        function changeWeatherFilter(weatherType) {
-            currentWeatherFilter = weatherType;
-            
-            // ボタンの見た目（アクティブ状態）を切り替え
-            document.querySelectorAll('.btn-weather').forEach(btn => btn.classList.remove('active'));
-            if(weatherType === 'すべて') document.getElementById('w-all').classList.add('active');
-            if(weatherType === '晴れ') document.getElementById('w-sunny').classList.add('active');
-            if(weatherType === '雨') document.getElementById('w-rainy').classList.add('active');
-            if(weatherType === '曇/雪') document.getElementById('w-cloudy').classList.add('active');
-
-            updateTimeFilter();
         }
 
         function updateTimeFilter() {
@@ -293,6 +397,16 @@
             document.getElementById('start-val').innerText = start + "時";
             document.getElementById('end-val').innerText = end + "時";
             document.getElementById('time-range-display').innerText = `表示範囲: ${start}:00 〜 ${end}:00`;
+
+            const tempVal = parseInt(document.getElementById('temp-slider').value);
+            const tempMode = document.querySelector('input[name="temp-mode"]:checked').value;
+            const modeText = tempMode === 'above' ? '以上' : '以下';
+            if (tempVal === -5) {
+                document.getElementById('temp-val-display').innerText = "全気温";
+            } else {
+                document.getElementById('temp-val-display').innerText = `${tempVal}℃ ${modeText}`;
+            }
+
             loadMapData(start, end);
         }
 
@@ -307,10 +421,12 @@
         function exportCSV() {
             const currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
             if(currentLog.length === 0) return alert("エクスポートするデータがありません");
-            let csv = "ID,タイプ,日時,曜日,時間,緯度,経度,天気\n";
-            currentLog.forEach(r => csv += `${r.id},${r.type || '乗車'},${r.timestamp},${r.day},${r.hour},${r.lat},${r.lng},${r.weather || '晴れ'}\n`);
+            let csv = "ID,タイプ,日時,曜日,時間,緯度,経度,天気,気温\n";
+            currentLog.forEach(r => csv += `${r.id},${r.type || '乗車'},${r.timestamp},${r.day},${r.hour},${r.lat},${r.lng},${r.weather || '晴れ'},${r.temp !== undefined ? r.temp : 20.0}\n`);
+            
             const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
-            const blob = new Blob([bom, csv], { type: "text/csv;charset=utf-8;" });
+            const blob = new Blob([bom, csv], { type: "application/octet-stream" });
+            
             const link = document.createElement("a");
             link.href = URL.createObjectURL(blob);
             link.setAttribute("download", `taxi_data_backup.csv`);
@@ -338,9 +454,11 @@
                     const hour = parseInt(parts[4]);
                     const lat = parseFloat(parts[5]);
                     const lng = parseFloat(parts[6]);
-                    const weather = parts[7] ? parts[7].trim() : '晴れ'; // CSVに天気列があれば読み込む
+                    const weather = parts[7] ? parts[7].trim() : '晴れ';
+                    const temp = parts[8] ? parseFloat(parts[8]) : 20.0;
+
                     if (currentLog.some(item => item.id === id)) continue;
-                    currentLog.push({ id: id, type: type, timestamp: timestamp, day: day, hour: hour, lat: lat, lng: lng, weather: weather });
+                    currentLog.push({ id: id, type: type, timestamp: timestamp, day: day, hour: hour, lat: lat, lng: lng, weather: weather, temp: temp });
                     importCount++;
                 }
                 localStorage.setItem('taxi_map_log', JSON.stringify(currentLog));
