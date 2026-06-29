@@ -415,7 +415,7 @@
             updateTimeFilter();
         }
 
-        // 【大修正】OS標準の共有・ファイル保存ダイアログを起動
+        // 【大修正】ファイル名も完全に「my_plot_data.csv」に擬態
         function exportCSV() {
             const currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
             if(currentLog.length === 0) return alert("エクスポートするデータがありません");
@@ -423,11 +423,11 @@
             currentLog.forEach(r => csv += `${r.id},${r.type || '乗車'},${r.timestamp},${r.day},${r.hour},${r.lat},${r.lng},${r.weather || '晴れ'},${r.temp !== undefined ? r.temp : 20.0}\n`);
             
             const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
-            const blob = new Blob([bom, csv], { type: "text/csv;charset=utf-8;" });
+            const blob = new Blob([bom, csv], { type: "application/octet-stream" });
             
-            const file = new File([blob], `taxi_data_backup.csv`, { type: "text/csv" });
+            // ファイル名を完全にダミー化
+            const file = new File([blob], `my_plot_data.csv`, { type: "text/csv" });
             
-            // iOS/Androidなどのネイティブ共有機能が使える場合
             if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
                 navigator.share({
                     files: [file],
@@ -437,10 +437,9 @@
                     // キャンセル時は静かに終了
                 });
             } else {
-                // PCや古いブラウザ用の従来のダウンロード方法
                 const link = document.createElement("a");
                 link.href = URL.createObjectURL(blob);
-                link.setAttribute("download", `taxi_data_backup.csv`);
+                link.setAttribute("download", `my_plot_data.csv`);
                 link.click();
             }
         }
