@@ -27,6 +27,12 @@
         
         /* 下部コントロール */
         #filter-panel { padding: 12px; background: white; box-shadow: 0 -2px 5px rgba(0,0,0,0.1); z-index: 1000; display: flex; flex-direction: column; gap: 8px; }
+        
+        /* 日付切り替えトグルボタンのスタイル */
+        .date-toggle-container { display: flex; background: #e9ecef; padding: 3px; border-radius: 8px; margin-bottom: 2px; }
+        .date-toggle-btn { flex: 1; text-align: center; padding: 6px 0; font-size: 13px; font-weight: bold; color: #495057; cursor: pointer; border-radius: 6px; transition: all 0.2s; }
+        .date-toggle-btn.active { background: #007bff; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.15); }
+
         .range-container { display: flex; flex-direction: column; gap: 4px; }
         .slider-row { display: flex; align-items: center; gap: 10px; }
         .slider-row label { width: 75px; font-weight: bold; font-size: 13px; }
@@ -41,7 +47,8 @@
         .temp-radio-group { display: flex; flex-direction: column; gap: 2px; font-size: 11px; }
         .temp-radio-label { display: flex; align-items: center; gap: 2px; cursor: pointer; }
 
-        .options-container { display: flex; justify-content: center; align-items: center; gap: 15px; font-size: 13px; font-weight: bold; background: #e9ecef; padding: 4px; border-radius: 5px; margin: 0; }
+        .options-container { display: flex; justify-content: center; align-items: center; gap: 15px; font-size: 12px; font-weight: bold; background: #e9ecef; padding: 6px; border-radius: 5px; margin: 0; flex-wrap: wrap; }
+        .options-container label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
         .options-container input { width: 16px; height: 16px; cursor: pointer; }
 
         .day-filter-container { font-size: 12px; font-weight: bold; display: flex; justify-content: space-around; flex-wrap: wrap; padding: 6px 4px; background: #eee; border-radius: 5px; }
@@ -50,9 +57,19 @@
 
         .delete-btn { background: #dc3545; color: white; border: none; border-radius: 3px; padding: 5px 8px; font-size: 12px; cursor: pointer; margin-top: 5px; width: 100%; }
         
-        .io-container { display: flex; gap: 10px; }
-        .btn-io { flex: 1; height: 32px; font-size: 12px; border-radius: 5px; border: 1px solid #ccc; background: #f8f9fa; cursor: pointer; font-weight: bold; text-align: center; line-height: 30px; }
+        .io-container { display: flex; gap: 6px; }
+        .btn-io { flex: 2; height: 32px; font-size: 11px; border-radius: 5px; border: 1px solid #ccc; background: #f8f9fa; cursor: pointer; font-weight: bold; text-align: center; line-height: 30px; }
+        .btn-history { flex: 1; background: #6c757d; color: white; border: none; font-size: 11px; font-weight: bold; border-radius: 5px; cursor: pointer; }
+        .btn-history:disabled { background: #ced4da; color: #6c757d; cursor: not-allowed; }
         #file-input { display: none; }
+
+        /* スマホでの文字選択暴発を防ぐCSSハック */
+        .custom-div-icon, .custom-div-icon * {
+            user-select: none !important;
+            -webkit-user-select: none !important;
+            -moz-user-select: none !important;
+            -ms-user-select: none !important;
+        }
     </style>
 </head>
 <body>
@@ -72,6 +89,11 @@
     <div id="map"></div>
 
     <div id="filter-panel">
+        <div class="date-toggle-container">
+            <div class="date-toggle-btn active" id="date-all-btn" onclick="setDateFilterMode('all')">🌐 全期間を表示</div>
+            <div class="date-toggle-btn" id="date-today-btn" onclick="setDateFilterMode('today')">📅 今日のみ表示</div>
+        </div>
+
         <div id="time-range-display">表示範囲: 0:00 〜 24:00</div>
         
         <div class="range-container">
@@ -102,9 +124,13 @@
         </div>
 
         <div class="options-container">
-            <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+            <label>
                 <input type="checkbox" id="show-lines-check" checked onchange="updateTimeFilter()">
-                乗降を結ぶ線を表示する
+                ルート線を表示
+            </label>
+            <label style="color: #666;">
+                <input type="checkbox" id="show-dropoff-check" checked onchange="updateTimeFilter()">
+                降車位置ピンを表示
             </label>
         </div>
         
@@ -119,9 +145,11 @@
         </div>
         
         <div class="io-container">
-            <div class="btn-io" onclick="exportCSV()">CSV書き出し</div>
+            <button class="btn-history" id="undo-btn" onclick="undo()" disabled>↩️ 戻す</button>
+            <button class="btn-history" id="redo-btn" onclick="redo()" disabled>↪️ 進む</button>
+            <div class="btn-io" onclick="exportCSV()">CSV書出</div>
             <label class="btn-io">
-                CSV読み込み
+                CSV読込
                 <input type="file" id="file-input" accept=".csv" onchange="importCSV(this)">
             </label>
         </div>
@@ -148,7 +176,61 @@
             '日': 'crimson' 
         };
 
+        // 【新規】アンドゥ・リドゥ用の履歴スタック
+        let historyStack = [];
+        let redoStack = [];
+        let dateFilterMode = 'all'; // 'all' または 'today'
+
         loadMapData(0, 24);
+
+        // 【新規】状態変化時に履歴を保存する関数
+        function saveState() {
+            const currentLog = localStorage.getItem('taxi_map_log') || "[]";
+            // 直近と同じ状態なら保存しない
+            if (historyStack.length > 0 && historyStack[historyStack.length - 1] === currentLog) return;
+            
+            historyStack.push(currentLog);
+            redoStack = []; // 新しい操作があったらリドゥ履歴はクリア
+            updateHistoryButtons();
+        }
+
+        function updateHistoryButtons() {
+            document.getElementById('undo-btn').disabled = historyStack.length === 0;
+            document.getElementById('redo-btn').disabled = redoStack.length === 0;
+        }
+
+        function undo() {
+            if (historyStack.length === 0) return;
+            const currentLog = localStorage.getItem('taxi_map_log') || "[]";
+            redoStack.push(currentLog);
+            
+            const prevState = historyStack.pop();
+            localStorage.setItem('taxi_map_log', prevState);
+            
+            document.getElementById('status').innerText = "↩️ 1つ前の状態に戻しました";
+            updateHistoryButtons();
+            updateTimeFilter();
+        }
+
+        function redo() {
+            if (redoStack.length === 0) return;
+            const currentLog = localStorage.getItem('taxi_map_log') || "[]";
+            historyStack.push(currentLog);
+            
+            const nextState = redoStack.pop();
+            localStorage.setItem('taxi_map_log', nextState);
+            
+            document.getElementById('status').innerText = "↪️ やり直しました（次の状態に進む）";
+            updateHistoryButtons();
+            updateTimeFilter();
+        }
+
+        function setDateFilterMode(mode) {
+            dateFilterMode = mode;
+            document.getElementById('date-all-btn').classList.toggle('active', mode === 'all');
+            document.getElementById('date-today-btn').classList.toggle('active', mode === 'today');
+            updateTimeFilter();
+        }
 
         function setButtonsDisabled(status) {
             document.getElementById('btn-current-loc').disabled = status;
@@ -244,9 +326,11 @@
 
                 const newRecord = { 
                     id: id, type: type, timestamp: timestamp, day: dayOfWeek, 
-                    hour: hour, lat: lat, lng: lng, weather: envData.weather, temp: envData.temp 
+                    hour: hour, lat: lat, lng: lng, weather: envData.weather, temp: envData.temp,
+                    dateStr: `${year}-${month}-${date}` // 【新規】日付フィルター用のフラグ
                 };
                 
+                saveState(); // 記録直前に状態保存
                 let currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
                 currentLog.push(newRecord);
                 localStorage.setItem('taxi_map_log', JSON.stringify(currentLog));
@@ -270,6 +354,7 @@
             
             const currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
             const showLines = document.getElementById('show-lines-check').checked;
+            const showDropoffPins = document.getElementById('show-dropoff-check').checked;
 
             const checkedDays = Array.from(document.querySelectorAll('.day-check:checked')).map(cb => cb.value);
             const filterRain = document.getElementById('weather-rain').checked;
@@ -278,11 +363,20 @@
             const tempMode = document.querySelector('input[name="temp-mode"]:checked').value;
             const tempThreshold = parseFloat(document.getElementById('temp-slider').value);
 
+            // 【新規】今日のみ表示用の日付取得
+            const t = new Date();
+            const todayStr = `${t.getFullYear()}-${t.getMonth() + 1}-${t.getDate()}`;
+
             currentLog.forEach(item => {
                 const h = item.hour;
                 const w = item.weather || '晴れ';
                 const d = item.day;
-                const t = item.temp !== undefined ? item.temp : 20.0;
+                const tempVal = item.temp !== undefined ? item.temp : 20.0;
+
+                // 【新規】「今日のみ」フィルター判定
+                if (dateFilterMode === 'today' && item.dateStr !== todayStr) {
+                    return; 
+                }
 
                 const matchesTime = (h >= startHour && h < endHour);
                 const matchesDay = checkedDays.includes(d);
@@ -293,8 +387,12 @@
 
                 let matchesTemp = true;
                 if (tempThreshold > -5) {
-                    if (tempMode === 'above') matchesTemp = (t >= tempThreshold);
-                    else if (tempMode === 'below') matchesTemp = (t <= tempThreshold);
+                    if (tempMode === 'above') matchesTemp = (tempVal >= tempThreshold);
+                    else if (tempMode === 'below') matchesTemp = (tempVal <= tempThreshold);
+                }
+
+                if (!showDropoffPins && (item.type === '降車' || item.type === '経由降車')) {
+                    return; 
                 }
 
                 if (matchesTime && matchesDay && matchesWeather && matchesTemp) {
@@ -319,18 +417,21 @@
                     const popupText = `
                         <div style="min-width: 150px;">
                             <b>[${item.type || '乗車'}] ${item.timestamp} (${item.day}曜)</b><br>
-                            天気: ${item.weather || '晴れ'} (${t.toFixed(1)}℃)<br>
-                            <span style="color: #007bff; font-size:11px;">※長押しで位置の微調整が可能</span><br>
+                            天気: ${item.weather || '晴れ'} (${tempVal.toFixed(1)}℃)<br>
+                            <span style="color: #007bff; font-size:11px;">※ピンをそのまま指で引きずって微調整可能</span><br>
                             <button class="delete-btn" onclick="deleteRecord(${item.id})">このデータを削除</button>
                         </div>
                     `;
 
-                    const marker = L.marker([item.lat, item.lng], { icon: markerIcon });
+                    const marker = L.marker([item.lat, item.lng], { icon: markerIcon, draggable: true });
                     marker.bindPopup(popupText).addTo(markersLayer);
 
-                    marker.on('popupopen', function() { marker.dragging.enable(); });
-                    marker.on('popupclose', function() { marker.dragging.disable(); });
+                    // ドラッグ開始時に状態をバックアップ
+                    marker.on('dragstart', function() {
+                        saveState();
+                    });
 
+                    // ドラッグ終了時に自動保存
                     marker.on('dragend', function(e) {
                         const newLatLng = e.target.getLatLng();
                         let logs = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
@@ -340,7 +441,7 @@
                             logs[targetIndex].lat = newLatLng.lat;
                             logs[targetIndex].lng = newLatLng.lng;
                             localStorage.setItem('taxi_map_log', JSON.stringify(logs));
-                            document.getElementById('status').innerText = `位置を微調整しました: [${item.type}]`;
+                            document.getElementById('status').innerText = `位置を微調整しました: [${item.type}] (間違えた場合は"戻す"で復元可能)`;
                             
                             updateTimeFilter();
                         }
@@ -356,16 +457,18 @@
                     const h = item.hour;
                     const w = item.weather || '晴れ';
                     const d = item.day;
-                    const t = item.temp !== undefined ? item.temp : 20.0;
+                    const tempVal = item.temp !== undefined ? item.temp : 20.0;
                     
+                    if (dateFilterMode === 'today' && item.dateStr !== todayStr) return;
+
                     let matchesWeather = false;
                     if (w === '雨' && filterRain) matchesWeather = true;
                     if ((w === '晴れ' || w === '曇/雪') && filterOther) matchesWeather = true;
 
                     let matchesTemp = true;
                     if (tempThreshold > -5) {
-                        if (tempMode === 'above') matchesTemp = (t >= tempThreshold);
-                        else if (tempMode === 'below') matchesTemp = (t <= tempThreshold);
+                        if (tempMode === 'above') matchesTemp = (tempVal >= tempThreshold);
+                        else if (tempMode === 'below') matchesTemp = (tempVal <= tempThreshold);
                     }
 
                     const filterMatch = (h >= startHour && h < endHour && checkedDays.includes(d) && matchesWeather && matchesTemp);
@@ -409,33 +512,28 @@
 
         function deleteRecord(id) {
             if (!confirm("このプロットデータを削除してもよろしいですか？")) return;
+            saveState(); // 削除前に履歴に保存
             let currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
             currentLog = currentLog.filter(item => item.id !== id);
             localStorage.setItem('taxi_map_log', JSON.stringify(currentLog));
             updateTimeFilter();
         }
 
-        // 【大修正】ファイル名も完全に「my_plot_data.csv」に擬態
         function exportCSV() {
             const currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
             if(currentLog.length === 0) return alert("エクスポートするデータがありません");
-            let csv = "ID,タイプ,日時,曜日,時間,緯度,経度,天気,気温\n";
-            currentLog.forEach(r => csv += `${r.id},${r.type || '乗車'},${r.timestamp},${r.day},${r.hour},${r.lat},${r.lng},${r.weather || '晴れ'},${r.temp !== undefined ? r.temp : 20.0}\n`);
+            let csv = "ID,タイプ,日時,曜日,時間,緯度,経度,天気,気温,日付フラグ\n";
+            currentLog.forEach(r => {
+                const dStr = r.dateStr || r.timestamp.split(" ")[0];
+                csv += `${r.id},${r.type || '乗車'},${r.timestamp},${r.day},${r.hour},${r.lat},${r.lng},${r.weather || '晴れ'},${r.temp !== undefined ? r.temp : 20.0},${dStr}\n`;
+            });
             
             const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
             const blob = new Blob([bom, csv], { type: "application/octet-stream" });
-            
-            // ファイル名を完全にダミー化
             const file = new File([blob], `my_plot_data.csv`, { type: "text/csv" });
             
             if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-                navigator.share({
-                    files: [file],
-                    title: 'データバックアップ',
-                    text: 'プロットデータCSV'
-                }).catch(err => {
-                    // キャンセル時は静かに終了
-                });
+                navigator.share({ files: [file], title: 'データバックアップ', text: 'プロットデータCSV' }).catch(err => {});
             } else {
                 const link = document.createElement("a");
                 link.href = URL.createObjectURL(blob);
@@ -444,20 +542,25 @@
             }
         }
 
+        // 【上書き ＆ マージ完全対応インポート】
         function importCSV(input) {
             const file = input.files[0];
             if (!file) return;
             const reader = new FileReader();
             reader.onload = function(e) {
+                saveState(); // インポート直前に元の状態を履歴へ保存
                 const text = e.target.result;
                 const lines = text.split("\n");
                 let currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
-                let importCount = 0;
+                let newCount = 0;
+                let updateCount = 0;
+
                 for (let i = 1; i < lines.length; i++) {
                     const line = lines[i].trim();
                     if (!line) continue;
                     const parts = line.split(",");
                     if (parts.length < 7) continue;
+
                     const id = parseInt(parts[0]);
                     const type = parts[1];
                     const timestamp = parts[2];
@@ -467,13 +570,25 @@
                     const lng = parseFloat(parts[6]);
                     const weather = parts[7] ? parts[7].trim() : '晴れ';
                     const temp = parts[8] ? parseFloat(parts[8]) : 20.0;
+                    const dateStr = parts[9] ? parts[9].trim() : timestamp.split(" ")[0];
 
-                    if (currentLog.some(item => item.id === id)) continue;
-                    currentLog.push({ id: id, type: type, timestamp: timestamp, day: day, hour: hour, lat: lat, lng: lng, weather: weather, temp: temp });
-                    importCount++;
+                    const importedRecord = { id: id, type: type, timestamp: timestamp, day: d, hour: hour, lat: lat, lng: lng, weather: weather, temp: temp, dateStr: dateStr };
+
+                    // 全く同じ時刻（ID）のデータが手元にあるかチェック
+                    const existingIndex = currentLog.findIndex(item => item.id === id);
+
+                    if (existingIndex !== -1) {
+                        // 時刻が完全に一致＝修正データなので【上書き】
+                        currentLog[existingIndex] = importedRecord;
+                        updateCount++;
+                    } else {
+                        // 新規データなので【マージ（追加）】
+                        currentLog.push(importedRecord);
+                        newCount++;
+                    }
                 }
                 localStorage.setItem('taxi_map_log', JSON.stringify(currentLog));
-                alert(`${importCount} 件のデータを正常にインポートしました。`);
+                alert(`インポート完了しました！\n・新規追加: ${newCount}件\n・位置上書き: ${updateCount}件\n(間違えた場合は"戻す"で即座に取り消せます)`);
                 updateTimeFilter();
                 input.value = "";
             };
