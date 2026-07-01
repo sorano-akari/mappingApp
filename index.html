@@ -12,7 +12,9 @@
         body { 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
             margin: 0; padding: 0; background: #f4f5f7; 
-            display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+            display: flex; flex-direction: column; 
+            height: 100vh; height: 100dvh; /* スマホの可変アドレスバーに対応 */
+            overflow: hidden;
         }
         
         #top-panel { padding: 8px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 1000; }
@@ -29,7 +31,12 @@
         .btn-current { width: 100%; height: 48px; font-size: 15px; font-weight: bold; background: #007bff; color: white; border: none; border-radius: 10px; cursor: pointer; }
         .btn-current:disabled { background: #6c757d !important; opacity: 0.6; cursor: not-allowed; }
         
-        #bottom-panel { padding: 12px; background: white; box-shadow: 0 -2px 5px rgba(0,0,0,0.1); z-index: 1000; overflow-y: auto; max-height: 35vh; box-sizing: border-box; }
+        #bottom-panel { 
+            padding: 12px; padding-bottom: 40px; /* 一番下に余裕を持たせる */
+            background: white; box-shadow: 0 -2px 5px rgba(0,0,0,0.1); z-index: 1000; 
+            overflow-y: auto; flex: 1; /* 残りの画面の高さをすべて使う */
+            box-sizing: border-box; 
+        }
         
         #status { font-size: 12px; color: #495057; font-weight: bold; text-align: center; margin-bottom: 8px; padding: 4px; background: #f8f9fa; border-radius: 4px; }
         
