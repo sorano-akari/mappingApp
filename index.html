@@ -2,583 +2,766 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>マップアプリ</title>
     
     <link rel="stylesheet" href="./leaflet.css" />
     <script src="./leaflet.js"></script>
     
     <style>
-        body { font-family: sans-serif; margin: 0; padding: 0; background: #f4f5f7; display: flex; flex-direction: column; height: 100vh; }
-        #control-panel { padding: 10px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 1000; text-align: center; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            margin: 0; padding: 0; background: #f4f5f7; 
+            display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+        }
         
-        .btn-main-container { max-width: 500px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
-        .btn-current { width: 100%; height: 40px; font-size: 15px; font-weight: bold; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; }
-        
-        .btn-container { display: flex; gap: 10px; }
-        .btn-log { flex: 1; height: 55px; font-size: 15px; font-weight: bold; color: white; border: none; border-radius: 10px; cursor: pointer; transition: opacity 0.2s; }
+        #top-panel { padding: 8px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 1000; }
+        .btn-log-group { display: flex; gap: 8px; }
+        .btn-log { flex: 1; height: 60px; font-size: 16px; font-weight: bold; color: white; border: none; border-radius: 12px; cursor: pointer; transition: opacity 0.2s; }
         .btn-pickup { background: #28a745; }
         .btn-via { background: #ffc107; color: #212529; }
         .btn-dropoff { background: #dc3545; }
+        .btn-log:disabled { background: #6c757d !important; opacity: 0.5; cursor: not-allowed; }
         
-        .btn-log:disabled, .btn-current:disabled { background: #6c757d !important; color: #fff !important; opacity: 0.6; cursor: not-allowed; }
+        #map { height: 45vh; flex-grow: 1; width: 100%; z-index: 1; }
         
-        /* 【変更】地図の表示エリアを広げ、スマホの画面の半分（50%）を確保して正方形に近づけました */
-        #map { height: 50vh; flex-grow: 1; width: 100%; }
+        #mid-panel { padding: 6px 8px; background: #e9ecef; z-index: 1000; }
+        .btn-current { width: 100%; height: 48px; font-size: 15px; font-weight: bold; background: #007bff; color: white; border: none; border-radius: 10px; cursor: pointer; }
+        .btn-current:disabled { background: #6c757d !important; opacity: 0.6; cursor: not-allowed; }
         
-        /* 下部コントロール */
-        #filter-panel { padding: 12px; background: white; box-shadow: 0 -2px 5px rgba(0,0,0,0.1); z-index: 1000; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+        #bottom-panel { padding: 12px; background: white; box-shadow: 0 -2px 5px rgba(0,0,0,0.1); z-index: 1000; overflow-y: auto; max-height: 35vh; box-sizing: border-box; }
         
-        /* 日付切り替えトグルボタンのスタイル */
-        .date-toggle-container { display: flex; background: #e9ecef; padding: 3px; border-radius: 8px; margin-bottom: 2px; }
-        .date-toggle-btn { flex: 1; text-align: center; padding: 6px 0; font-size: 13px; font-weight: bold; color: #495057; cursor: pointer; border-radius: 6px; transition: all 0.2s; }
-        .date-toggle-btn.active { background: #007bff; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.15); }
-
-        .range-container { display: flex; flex-direction: column; gap: 4px; }
-        .slider-row { display: flex; align-items: center; gap: 10px; }
-        .slider-row label { width: 75px; font-weight: bold; font-size: 13px; }
-        input[type=range] { flex-grow: 1; }
-        #time-range-display { color: #007bff; font-size: 16px; font-weight: bold; text-align: center; }
+        #status { font-size: 12px; color: #495057; font-weight: bold; text-align: center; margin-bottom: 8px; padding: 4px; background: #f8f9fa; border-radius: 4px; }
         
-        .weather-filter-container { display: flex; justify-content: center; gap: 20px; background: #f1f3f5; padding: 6px; border-radius: 5px; font-size: 13px; font-weight: bold; }
-        .weather-label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
-        .weather-label input { width: 16px; height: 16px; }
-
-        .temp-filter-container { display: flex; align-items: center; gap: 8px; background: #fff3cd; padding: 6px; border-radius: 5px; font-size: 13px; font-weight: bold; }
-        .temp-radio-group { display: flex; flex-direction: column; gap: 2px; font-size: 11px; }
-        .temp-radio-label { display: flex; align-items: center; gap: 2px; cursor: pointer; }
-
-        .options-container { display: flex; justify-content: center; align-items: center; gap: 15px; font-size: 12px; font-weight: bold; background: #e9ecef; padding: 6px; border-radius: 5px; margin: 0; flex-wrap: wrap; }
-        .options-container label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
-        .options-container input { width: 16px; height: 16px; cursor: pointer; }
-
-        .day-filter-container { font-size: 12px; font-weight: bold; display: flex; justify-content: space-around; flex-wrap: wrap; padding: 6px 4px; background: #eee; border-radius: 5px; }
-        .day-label { display: flex; align-items: center; gap: 2px; cursor: pointer; }
-        .day-label input { width: 14px; height: 14px; cursor: pointer; }
-
-        .delete-btn { background: #dc3545; color: white; border: none; border-radius: 3px; padding: 5px 8px; font-size: 12px; cursor: pointer; margin-top: 5px; width: 100%; }
+        .ui-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 13px; font-weight: bold; }
+        .ui-row label { width: 75px; color: #495057; flex-shrink: 0; }
+        .ui-select { flex-grow: 1; height: 34px; font-size: 13px; font-weight: bold; border-radius: 6px; border: 1px solid #ced4da; padding: 0 8px; background-color: #fff; }
         
-        .io-container { display: flex; gap: 6px; }
-        .btn-io { flex: 2; height: 32px; font-size: 11px; border-radius: 5px; border: 1px solid #ccc; background: #f8f9fa; cursor: pointer; font-weight: bold; text-align: center; line-height: 30px; }
-        .btn-history { flex: 1; height: 32px; background: #6c757d; color: white; border: none; font-size: 11px; font-weight: bold; border-radius: 5px; cursor: pointer; }
-        .btn-history:disabled { background: #ced4da; color: #6c757d; cursor: not-allowed; }
+        .filter-disabled { opacity: 0.4; pointer-events: none; user-select: none; }
+        
+        .checkbox-group { display: flex; gap: 12px; flex-grow: 1; }
+        .checkbox-label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+        .checkbox-label input { width: 16px; height: 16px; }
+        
+        .day-filter-container { display: flex; justify-content: space-between; background: #eee; padding: 6px; border-radius: 6px; width: 100%; box-sizing: border-box; }
+        .day-label { display: flex; align-items: center; gap: 2px; cursor: pointer; font-size: 11px; }
+        .day-label input { width: 14px; height: 14px; }
+        
+        .convert-btn { border: none; width: 100%; padding: 6px; margin-bottom: 4px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; color: white; }
+        
+        .io-container { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; border-top: 1px dashed #dee2e6; padding-top: 10px; }
+        .io-row-btns { display: flex; gap: 6px; }
+        .btn-io { flex: 1; height: 36px; font-size: 12px; border-radius: 6px; border: 1px solid #ced4da; background: #f8f9fa; cursor: pointer; font-weight: bold; text-align: center; line-height: 34px; box-sizing: border-box; }
+        .btn-io-main { background: #e2e6ea; border-color: #adb5bd; }
         #file-input { display: none; }
-
-        /* スマホでの文字選択暴発を防ぐCSSハック */
-        .custom-div-icon, .custom-div-icon * {
-            user-select: none !important;
-            -webkit-user-select: none !important;
-            -moz-user-select: none !important;
-            -ms-user-select: none !important;
-        }
+        
+        .custom-div-icon { user-select: none !important; -webkit-user-select: none !important; }
     </style>
 </head>
 <body>
 
-    <div id="control-panel">
-        <div class="btn-main-container">
-            <button class="btn-current" id="btn-current-loc" onclick="showMyLocation()">🧭 現在地を表示 (中心に移動)</button>
-            <div class="btn-container">
-                <button class="btn-log btn-pickup" id="btn-p" onclick="recordLocation('乗車')">ここで乗車！</button>
-                <button class="btn-log btn-via" id="btn-v" onclick="recordLocation('経由降車')">ここで経由降車</button>
-                <button class="btn-log btn-dropoff" id="btn-d" onclick="recordLocation('降車')">ここで降車！</button>
-            </div>
+    <div id="top-panel">
+        <div class="btn-log-group">
+            <button class="btn-log btn-pickup" id="btn-p" onclick="recordLocation('乗車')">乗車！</button>
+            <button class="btn-log btn-via" id="btn-v" onclick="recordLocation('経由降車')">経由</button>
+            <button class="btn-log btn-dropoff" id="btn-d" onclick="recordLocation('降車')">降車！</button>
         </div>
-        <div id="status" style="font-size:12px; color:#666; margin-top: 5px;">ボタンを押すと現在地をプロットします</div>
     </div>
 
     <div id="map"></div>
 
-    <div id="filter-panel">
-        <div class="date-toggle-container">
-            <div class="date-toggle-btn active" id="date-all-btn" onclick="setDateFilterMode('all')">🌐 全期間を表示</div>
-            <div class="date-toggle-btn" id="date-today-btn" onclick="setDateFilterMode('today')">📅 今日のみ表示</div>
-        </div>
+    <div id="mid-panel">
+        <button class="btn-current" id="btn-current-loc" onclick="showMyLocation()">🧭 現在地を表示 (中心に移動)</button>
+    </div>
 
-        <div id="time-range-display">表示範囲: 0:00 〜 24:00</div>
+    <div id="bottom-panel">
+        <div id="status">システム初期化中...</div>
         
-        <div class="range-container">
-            <div class="slider-row">
-                <label>開始時刻:</label>
-                <input type="range" id="start-time" min="0" max="24" value="0" oninput="updateTimeFilter()">
-                <span id="start-val" style="width:25px; font-size:13px;">0時</span>
-            </div>
-            <div class="slider-row">
-                <label>終了時刻:</label>
-                <input type="range" id="end-time" min="0" max="24" value="24" oninput="updateTimeFilter()">
-                <span id="end-val" style="width:25px; font-size:13px;">24時</span>
+        <div class="ui-row">
+            <label>表示モード:</label>
+            <select id="app-mode" class="ui-select" onchange="onModeChange()">
+                <option value="record" selected>🧭 記録モード（今日・経路沿い曲線）</option>
+                <option value="analysis">📊 分析モード（全期間・直線）</option>
+            </select>
+        </div>
+
+        <div class="ui-row" id="time-filter-row">
+            <label>時刻指定:</label>
+            <div style="display:flex; align-items:center; gap:5px; flex-grow:1;">
+                <select id="start-time" class="ui-select" onchange="onStartTimeChange()"></select>
+                <span>〜</span>
+                <select id="end-time" class="ui-select" onchange="updateView()"></select>
             </div>
         </div>
 
-        <div class="weather-filter-container">
-            <label class="weather-label"><input type="checkbox" id="weather-rain" checked onchange="updateTimeFilter()">☔ 雨</label>
-            <label class="weather-label"><input type="checkbox" id="weather-other" checked onchange="updateTimeFilter()">☀️☁️ それ以外</label>
+        <div class="ui-row" id="track-filter-row">
+            <label>足跡ログ:</label>
+            <select id="track-display-mode" class="ui-select" onchange="onTrackModeChange()">
+                <option value="none">🚫 足跡を表示しない</option>
+                <option value="today">📅 今日のみ表示</option>
+                <option value="yesterday">⏳ 昨日のみ表示</option>
+                <option value="daybefore">📜 一昨日のみ表示</option>
+            </select>
         </div>
 
-        <div class="temp-filter-container">
-            <div class="temp-radio-group">
-                <label class="temp-radio-label"><input type="radio" name="temp-mode" value="above" checked onchange="updateTimeFilter()">以上</label>
-                <label class="temp-radio-label"><input type="radio" name="temp-mode" value="below" onchange="updateTimeFilter()">以下</label>
+        <div class="ui-row" id="display-options-row">
+            <label>表示要素:</label>
+            <div class="checkbox-group" style="background: #e9ecef; padding: 4px 8px; border-radius: 6px; font-size:12px;">
+                <label class="checkbox-label"><input type="checkbox" id="show-lines-check" checked onchange="updateView()">線</label>
+                <label class="checkbox-label"><input type="checkbox" id="show-pickup-check" checked onchange="updateView()">乗車</label>
+                <label class="checkbox-label"><input type="checkbox" id="show-dropoff-check" checked onchange="updateView()">経由/降車</label>
             </div>
-            <span style="font-size:12px; width:45px;" id="temp-val-display">全気温</span>
-            <input type="range" id="temp-slider" min="-5" max="40" value="-5" oninput="updateTimeFilter()">
         </div>
 
-        <div class="options-container">
-            <label>
-                <input type="checkbox" id="show-lines-check" checked onchange="updateTimeFilter()">
-                ルート線を表示
-            </label>
-            <label style="color: #666;">
-                <input type="checkbox" id="show-dropoff-check" checked onchange="updateTimeFilter()">
-                降車位置ピンを表示
-            </label>
+        <div id="analysis-filters-group">
+            <div class="ui-row">
+                <label>天気指定:</label>
+                <div class="checkbox-group">
+                    <label class="checkbox-label"><input type="checkbox" id="weather-rain" checked onchange="updateView()">☔ 雨</label>
+                    <label class="checkbox-label"><input type="checkbox" id="weather-other" checked onchange="updateView()">☀️☁️ それ以外</label>
+                </div>
+            </div>
+
+            <div class="ui-row">
+                <label id="temp-label">全気温:</label>
+                <input type="range" id="temp-slider" min="-5" max="40" value="-5" style="flex-grow:1;" oninput="onTempSliderInput()">
+                <select id="temp-mode" class="ui-select" style="max-width:70px;" onchange="updateView()">
+                    <option value="above">以上</option>
+                    <option value="below">以下</option>
+                </select>
+            </div>
+            
+            <div class="ui-row">
+                <div class="day-filter-container">
+                    <label class="day-label" style="color: purple;"><input type="checkbox" class="day-check" value="月" checked onchange="updateView()">月</label>
+                    <label class="day-label" style="color: orange;"><input type="checkbox" class="day-check" value="火" checked onchange="updateView()">火</label>
+                    <label class="day-label" style="color: deepskyblue;"><input type="checkbox" class="day-check" value="水" checked onchange="updateView()">水</label>
+                    <label class="day-label" style="color: forestgreen;"><input type="checkbox" class="day-check" value="木" checked onchange="updateView()">木</label>
+                    <label class="day-label" style="color: gold; text-shadow: 0 0 1px #ccc;"><input type="checkbox" class="day-check" value="金" checked onchange="updateView()">金</label>
+                    <label class="day-label" style="color: navy;"><input type="checkbox" class="day-check" value="土" checked onchange="updateView()">土</label>
+                    <label class="day-label" style="color: crimson;"><input type="checkbox" class="day-check" value="日" checked onchange="updateView()">日/祝</label>
+                </div>
+            </div>
         </div>
-        
-        <div class="day-filter-container">
-            <label class="day-label" style="color: purple;"><input type="checkbox" class="day-check" value="月" checked onchange="updateTimeFilter()">月</label>
-            <label class="day-label" style="color: orange;"><input type="checkbox" class="day-check" value="火" checked onchange="updateTimeFilter()">火</label>
-            <label class="day-label" style="color: deepskyblue;"><input type="checkbox" class="day-check" value="水" checked onchange="updateTimeFilter()">水</label>
-            <label class="day-label" style="color: forestgreen;"><input type="checkbox" class="day-check" value="木" checked onchange="updateTimeFilter()">木</label>
-            <label class="day-label" style="color: gold; text-shadow: 0 0 1px #ccc;"><input type="checkbox" class="day-check" value="金" checked onchange="updateTimeFilter()">金</label>
-            <label class="day-label" style="color: navy;"><input type="checkbox" class="day-check" value="土" checked onchange="updateTimeFilter()">土</label>
-            <label class="day-label" style="color: crimson;"><input type="checkbox" class="day-check" value="日" checked onchange="updateTimeFilter()">日/祝</label>
-        </div>
-        
+
         <div class="io-container">
-            <button class="btn-history" id="undo-btn" onclick="undo()" disabled>↩️ 戻す</button>
-            <button class="btn-history" id="redo-btn" onclick="redo()" disabled>↪️ 進む</button>
-            <div class="btn-io" onclick="exportCSV()">CSV書出</div>
-            <label class="btn-io">
-                CSV読込
-                <input type="file" id="file-input" accept=".csv" onchange="importCSV(this)">
-            </label>
+            <div class="io-row-btns">
+                <label class="btn-io">
+                    📥 乗降CSV読込
+                    <input type="file" id="file-input" accept=".csv" onchange="importCSV(this)">
+                </label>
+                <div class="btn-io btn-io-main" onclick="exportPlotCSV()">📄 乗降データを書出</div>
+            </div>
+            <div class="btn-io btn-io-main" onclick="exportTrackCSV()">🐾 経路データを書出</div>
         </div>
     </div>
 
     <script>
-        const map = L.map('map').setView([33.5902, 130.4207], 13);
-        
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors'
-        }).addTo(map);
+        const map = L.map('map', { zoomControl: false }).setView([33.5902, 130.4207], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
         let markersLayer = L.layerGroup().addTo(map);
         let linesLayer = L.layerGroup().addTo(map);
         let myLocationLayer = L.layerGroup().addTo(map);
 
-        const dayColors = { 
-            '月': 'purple', 
-            '火': 'orange', 
-            '水': 'deepskyblue', 
-            '木': 'forestgreen', 
-            '金': 'gold', 
-            '土': 'navy', 
-            '日': 'crimson' 
+        const dayColors = { '月':'purple', '火':'orange', '水':'deepskyblue', '木':'forestgreen', '金':'gold', '土':'navy', '日':'crimson' };
+
+        let isGpsLocating = false;
+        let lastTrackLat = null;
+        let lastTrackLng = null;
+        let lastTrackTime = 0;
+
+        // --- 起動処理 ---
+        window.onload = function() {
+            initTimeDropdowns();
+            autoCleanOldTracks(); 
+            onModeChange();
+            
+            // トリガー1：起動時強制取得ロジック
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(async (position) => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const now = new Date();
+                    const id = now.getTime();
+                    
+                    lastTrackLat = lat; lastTrackLng = lng; lastTrackTime = id;
+                    const env = await fetchForceEnvAPI(lat, lng);
+                    
+                    await writeTrackRecord(id, lat, lng, now, env.weather, env.temp, id);
+                    setInterval(passiveTrackingTick, 60000);
+                }, () => {
+                    setInterval(passiveTrackingTick, 60000);
+                }, { enableHighAccuracy: true, timeout: 10000 });
+            }
         };
 
-        let historyStack = [];
-        let redoStack = [];
-        let dateFilterMode = 'all'; 
-
-        loadMapData(0, 24);
-
-        function saveState() {
-            const currentLog = localStorage.getItem('taxi_map_log') || "[]";
-            if (historyStack.length > 0 && historyStack[historyStack.length - 1] === currentLog) return;
-            historyStack.push(currentLog);
-            redoStack = []; 
-            updateHistoryButtons();
+        function initTimeDropdowns() {
+            const startSelect = document.getElementById('start-time');
+            startSelect.innerHTML = '';
+            for (let h = 0; h < 24; h++) {
+                let opt = document.createElement('option');
+                opt.value = h; opt.innerText = h + "時";
+                startSelect.appendChild(opt);
+            }
+            startSelect.value = 0;
+            onStartTimeChange();
         }
 
-        function updateHistoryButtons() {
-            document.getElementById('undo-btn').disabled = historyStack.length === 0;
-            document.getElementById('redo-btn').disabled = redoStack.length === 0;
+        function onStartTimeChange() {
+            const startSelect = document.getElementById('start-time');
+            const endSelect = document.getElementById('end-time');
+            const startVal = parseInt(startSelect.value);
+            const currentEndVal = endSelect.value ? parseInt(endSelect.value) : (startVal + 24);
+            
+            endSelect.innerHTML = '';
+
+            for (let i = 1; i <= 24; i++) {
+                let targetHour = startVal + i;
+                let opt = document.createElement('option');
+                opt.value = targetHour;
+                opt.innerText = (targetHour <= 24) ? targetHour + "時" : "翌" + (targetHour % 24) + "時";
+                endSelect.appendChild(opt);
+            }
+            
+            if (currentEndVal > startVal && currentEndVal <= startVal + 24) {
+                endSelect.value = currentEndVal;
+            } else {
+                endSelect.value = startVal + 24;
+            }
+            updateView();
         }
 
-        function undo() {
-            if (historyStack.length === 0) return;
-            const currentLog = localStorage.getItem('taxi_map_log') || "[]";
-            redoStack.push(currentLog);
-            const prevState = historyStack.pop();
-            localStorage.setItem('taxi_map_log', prevState);
-            document.getElementById('status').innerText = "↩️ 1つ前の状態に戻しました";
-            updateHistoryButtons();
-            updateTimeFilter();
+        function onModeChange() {
+            const mode = document.getElementById('app-mode').value;
+            const trackSelect = document.getElementById('track-display-mode');
+            const filtersGroup = document.getElementById('analysis-filters-group');
+            const timeRow = document.getElementById('time-filter-row');
+
+            if (mode === 'record') {
+                trackSelect.value = 'today';
+                trackSelect.disabled = true;
+                filtersGroup.classList.add('filter-disabled');
+                timeRow.classList.add('filter-disabled');
+                document.getElementById('start-time').value = 0;
+                onStartTimeChange();
+                document.getElementById('end-time').value = 24;
+            } else {
+                trackSelect.value = 'none';
+                trackSelect.disabled = false;
+                filtersGroup.classList.remove('filter-disabled');
+                timeRow.classList.remove('filter-disabled');
+            }
+            updateView();
         }
 
-        function redo() {
-            if (redoStack.length === 0) return;
-            const currentLog = localStorage.getItem('taxi_map_log') || "[]";
-            historyStack.push(currentLog);
-            const nextState = redoStack.pop();
-            localStorage.setItem('taxi_map_log', nextState);
-            document.getElementById('status').innerText = "↪️ やり直しました（次の状態に進む）";
-            updateHistoryButtons();
-            updateTimeFilter();
+        function onTrackModeChange() {
+            const trackMode = document.getElementById('track-display-mode').value;
+            const filtersGroup = document.getElementById('analysis-filters-group');
+            const timeRow = document.getElementById('time-filter-row');
+
+            if (trackMode !== 'none') {
+                filtersGroup.classList.add('filter-disabled');
+                timeRow.classList.add('filter-disabled');
+                document.getElementById('start-time').value = 0;
+                onStartTimeChange();
+                document.getElementById('end-time').value = 24;
+            } else {
+                filtersGroup.classList.remove('filter-disabled');
+                timeRow.classList.remove('filter-disabled');
+            }
+            updateView();
         }
 
-        function setDateFilterMode(mode) {
-            dateFilterMode = mode;
-            document.getElementById('date-all-btn').classList.toggle('active', mode === 'all');
-            document.getElementById('date-today-btn').classList.toggle('active', mode === 'today');
-            updateTimeFilter();
+        function autoCleanOldTracks() {
+            let currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
+            if (currentLog.length === 0) return;
+
+            const now = new Date();
+            const sevenDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7).getTime();
+
+            currentLog = currentLog.filter(item => {
+                if (item.type === '足跡' && item.id < sevenDaysAgo) return false;
+                return true;
+            });
+            localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
+            document.getElementById('status').innerText = "システム稼働中";
         }
 
         function setButtonsDisabled(status) {
-            document.getElementById('btn-current-loc').disabled = status;
             document.getElementById('btn-p').disabled = status;
             document.getElementById('btn-v').disabled = status;
             document.getElementById('btn-d').disabled = status;
+            document.getElementById('btn-current-loc').disabled = status;
         }
 
-        function showMyLocation() {
-            document.getElementById('status').innerText = "現在地を取得中...";
-            if (!navigator.geolocation) return;
+        // 🧠 祝日APIキャッシュロジック（年単位で1度だけ取得しI/Oを極限まで軽量化）
+        async function checkIsHoliday(year, month, day) {
+            const cacheKey = `map_holidays_${year}`;
+            let holidays = JSON.parse(localStorage.getItem(cacheKey));
             
+            if (!holidays) {
+                try {
+                    const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/JP`);
+                    if (!response.ok) return false;
+                    const data = await response.json();
+                    holidays = data.map(h => h.date);
+                    localStorage.setItem(cacheKey, JSON.stringify(holidays));
+                } catch (e) {
+                    return false;
+                }
+            }
+            const targetStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            return holidays && holidays.includes(targetStr);
+        }
+
+        // トリガー4：手動打刻（API強制取得＋最近傍補正＋即時祝日判定）
+        function recordLocation(type) {
+            if (isGpsLocating) return;
+            isGpsLocating = true;
+            document.getElementById('status').innerText = "データ取得・環境検証中...";
             setButtonsDisabled(true);
 
-            navigator.geolocation.getCurrentPosition((position) => {
+            navigator.geolocation.getCurrentPosition(async (position) => {
                 const lat = position.coords.latitude;
                 const lng = position.coords.longitude;
-                myLocationLayer.clearLayers();
-                const myIcon = L.divIcon({
-                    className: 'my-location-icon',
-                    html: `<div style="background-color: #333; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 8px rgba(0,0,0,0.5);"></div>`,
-                    iconSize: [14, 14],
-                    iconAnchor: [7, 7]
-                });
-                L.marker([lat, lng], { icon: myIcon }).bindPopup("<b>📍 あなたの現在地</b>").addTo(myLocationLayer);
+                const now = new Date();
+                const id = now.getTime();
+
+                lastTrackLat = lat; lastTrackLng = lng; lastTrackTime = id;
+
+                // API強制取得 ＆ 過去足跡の動的最近傍補正
+                const env = await fetchForceEnvAPI(lat, lng);
+                applyNearestNeighborEnv(id, env.weather, env.temp);
+
+                const year = now.getFullYear(); 
+                const month = now.getMonth() + 1; 
+                const date = now.getDate();
+                const hour = now.getHours(); 
+                const min = String(now.getMinutes()).padStart(2, '0');
+                
+                // 超軽量化されたキャッシュ版祝日判定
+                const isHoliday = await checkIsHoliday(year, month, date);
+                const days = ['日', '月', '火', '水', '木', '金', '土'];
+                const dayOfWeek = isHoliday ? '日' : days[now.getDay()];
+                const timestamp = `${year}-${month}-${date} ${hour}:${min}`;
+
+                const newRecord = { 
+                    id: id, type: type, timestamp: timestamp, day: dayOfWeek, 
+                    hour: hour, lat: lat, lng: lng, weather: env.weather, temp: env.temp,
+                    dateStr: `${year}-${month}-${date}` 
+                };
+                
+                let currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
+                currentLog.push(newRecord);
+                localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
+
+                document.getElementById('status').innerText = `記録成功(${type}): ${hour}:${min} [${env.weather}/${env.temp.toFixed(1)}℃]`;
+                isGpsLocating = false;
+                updateView();
                 map.setView([lat, lng], 15);
-                document.getElementById('status').innerText = "現在地を表示しました";
                 
                 setTimeout(() => { setButtonsDisabled(false); }, 3000);
             }, (err) => {
-                document.getElementById('status').innerText = "GPSエラー: " + err.message;
+                document.getElementById('status').innerText = "GPS取得失敗: " + err.message;
+                isGpsLocating = false;
                 setTimeout(() => { setButtonsDisabled(false); }, 3000);
             }, { enableHighAccuracy: true, timeout: 10000 });
         }
 
-        async function fetchWeatherAndTemp(lat, lng) {
+        // トリガー2＆3：パッシブトラッキング（30分巡航 ＆ スリープ復帰検知）
+        function passiveTrackingTick() {
+            if (isGpsLocating || !navigator.geolocation) return;
+
+            navigator.geolocation.getCurrentPosition(async (position) => {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                const now = new Date();
+                const nowTime = now.getTime();
+
+                if (lastTrackLat !== null) {
+                    const latDiff = Math.abs(lat - lastTrackLat);
+                    const lngDiff = Math.abs(lng - lastTrackLng);
+                    if (latDiff < 0.0003 && lngDiff < 0.0003) return;
+                }
+
+                // スリープからの復帰検知（3分以上の空白）
+                let isSleepRecovery = false;
+                if (lastTrackTime !== 0 && (nowTime - lastTrackTime) > 180000) {
+                    isSleepRecovery = true;
+                }
+
+                lastTrackLat = lat; lastTrackLng = lng; lastTrackTime = nowTime;
+
+                // 前回APIからの経過時間をチェック（30分巡航）
+                const lastFetch = parseInt(localStorage.getItem('map_last_env_fetch_time')) || 0;
+                let is30MinCruise = (nowTime - lastFetch) >= 1800000;
+
+                if (isSleepRecovery || is30MinCruise) {
+                    const env = await fetchForceEnvAPI(lat, lng);
+                    applyNearestNeighborEnv(nowTime, env.weather, env.temp);
+                    await writeTrackRecord(nowTime, lat, lng, now, env.weather, env.temp, nowTime);
+                } else {
+                    const env = getClosestEnvFromCache(nowTime);
+                    await writeTrackRecord(nowTime, lat, lng, now, env.weather, env.temp, env.env_time);
+                }
+            }, () => {}, { enableHighAccuracy: true, timeout: 10000 });
+        }
+
+        // 足跡データの書き込み専用関数（祝日キャッシュ適用）
+        async function writeTrackRecord(id, lat, lng, now, weather, temp, envTime) {
+            const year = now.getFullYear(); 
+            const month = now.getMonth() + 1; 
+            const date = now.getDate();
+            const hour = now.getHours(); 
+            const min = String(now.getMinutes()).padStart(2, '0');
+            
+            const isHoliday = await checkIsHoliday(year, month, date);
+            const days = ['日', '月', '火', '水', '木', '金', '土'];
+            const dayOfWeek = isHoliday ? '日' : days[now.getDay()];
+
+            const newTrack = { 
+                id: id, type: '足跡', timestamp: `${year}-${month}-${date} ${hour}:${min}`, day: dayOfWeek, 
+                hour: hour, lat: lat, lng: lng, weather: weather, temp: temp, env_time: envTime, dateStr: `${year}-${month}-${date}` 
+            };
+
+            let currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
+            currentLog.push(newTrack);
+            localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
+            updateView();
+        }
+
+        // 🧠 動的最近傍（タイムスタンプ比較）環境補正エンジン
+        function applyNearestNeighborEnv(tNew, newWeather, newTemp) {
+            let currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
+            let updated = false;
+
+            currentLog = currentLog.map(item => {
+                if (item.type === '足跡') {
+                    const t = item.id;
+                    const tOld = item.env_time || 0;
+
+                    if (tOld === 0 || Math.abs(t - tNew) < Math.abs(t - tOld)) {
+                        item.weather = newWeather;
+                        item.temp = newTemp;
+                        item.env_time = tNew;
+                        updated = true;
+                    }
+                }
+                return item;
+            });
+
+            if (updated) {
+                localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
+            }
+        }
+
+        function showMyLocation() {
+            if (!navigator.geolocation || isGpsLocating) return;
+            document.getElementById('status').innerText = "現在地を取得中...";
+            
+            navigator.geolocation.getCurrentPosition((position) => {
+                const lat = position.coords.latitude; 
+                const lng = position.coords.longitude;
+                myLocationLayer.clearLayers();
+                
+                const myIcon = L.divIcon({
+                    className: 'my-location-icon',
+                    html: `<div style="background-color: #007bff; width: 14px; height: 14px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 8px rgba(0,0,0,0.5);"></div>`,
+                    iconSize: [14, 14], iconAnchor: [7, 7]
+                });
+                
+                L.marker([lat, lng], { icon: myIcon }).addTo(myLocationLayer);
+                map.setView([lat, lng], 15);
+                document.getElementById('status').innerText = "中心に移動しました。";
+            }, (err) => {
+                document.getElementById('status').innerText = "現在地取得失敗";
+            }, { enableHighAccuracy: true, timeout: 10000 });
+        }
+
+        function convertRecord(id, newType) {
+            let currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
+            const idx = currentLog.findIndex(item => item.id === id);
+            if (idx !== -1) {
+                currentLog[idx].type = newType;
+                localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
+                document.getElementById('status').innerText = `ステータスを[${newType}]に変換しました。`;
+                updateView();
+            }
+        }
+
+        function updateView() {
+            markersLayer.clearLayers();
+            linesLayer.clearLayers();
+
+            const mode = document.getElementById('app-mode').value;
+            const trackMode = document.getElementById('track-display-mode').value;
+            const startHour = parseInt(document.getElementById('start-time').value);
+            const endHour = parseInt(document.getElementById('end-time').value);
+
+            const filterRain = document.getElementById('weather-rain').checked;
+            const filterOther = document.getElementById('weather-other').checked;
+            const checkedDays = Array.from(document.querySelectorAll('.day-check:checked')).map(cb => cb.value);
+            const tempThreshold = parseFloat(document.getElementById('temp-slider').value);
+            const tempMode = document.getElementById('temp-mode').value;
+
+            // 復活：表示ON/OFFステータスの取得
+            const showLines = document.getElementById('show-lines-check').checked;
+            const showPickup = document.getElementById('show-pickup-check').checked;
+            const showDropoff = document.getElementById('show-dropoff-check').checked;
+
+            const currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
+            
+            const t = new Date();
+            const todayStr = `${t.getFullYear()}-${t.getMonth() + 1}-${t.getDate()}`;
+            const y = new Date(t.getFullYear(), t.getMonth(), t.getDate() - 1);
+            const yesterdayStr = `${y.getFullYear()}-${y.getMonth() + 1}-${y.getDate()}`;
+            const b = new Date(t.getFullYear(), t.getMonth(), t.getDate() - 2);
+            const dayBeforeStr = `${b.getFullYear()}-${b.getMonth() + 1}-${b.getDate()}`;
+
+            let targetDateStr = null;
+            if (mode === 'record') targetDateStr = todayStr;
+            else if (trackMode === 'today') targetDateStr = todayStr;
+            else if (trackMode === 'yesterday') targetDateStr = yesterdayStr;
+            else if (trackMode === 'daybefore') targetDateStr = dayBeforeStr;
+
+            currentLog.forEach(item => {
+                if (targetDateStr && item.dateStr !== targetDateStr) return;
+                if (item.type === '足跡' && (mode === 'analysis' && trackMode === 'none')) return;
+
+                // 復活：チェックが外れているピンの描画をスキップ
+                if (!showPickup && item.type === '乗車') return;
+                if (!showDropoff && (item.type === '降車' || item.type === '経由降車')) return;
+
+                if (mode === 'analysis' && trackMode === 'none') {
+                    const h = item.hour;
+                    let matchesTime = false;
+                    if (endHour <= 24) {
+                        matchesTime = (h >= startHour && h < endHour);
+                    } else {
+                        matchesTime = (h >= startHour || h < (endHour % 24));
+                    }
+                    if (!matchesTime) return;
+                    if (!checkedDays.includes(item.day)) return;
+                    if (item.weather === '雨' && !filterRain) return;
+                    if ((item.weather === '晴れ' || item.weather === '曇/雪') && !filterOther) return;
+                    if (tempThreshold > -5) {
+                        const tempVal = item.temp !== undefined ? item.temp : 20.0;
+                        if (tempMode === 'above' && tempVal < tempThreshold) return;
+                        if (tempMode === 'below' && tempVal > tempThreshold) return;
+                    }
+                }
+
+                const color = dayColors[item.day] || 'black';
+                let htmlStyle = ""; let size = [14, 14]; let anchor = [7, 7];
+
+                if (item.type === '降車') {
+                    htmlStyle = `<div style="background-color: white; width: 10px; height: 10px; border-radius: 50%; border: 3px solid ${color}; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`;
+                } else if (item.type === '経由降車') {
+                    htmlStyle = `<div style="width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 12px solid ${color}; filter: drop-shadow(0px 2px 2px rgba(0,0,0,0.3));"></div>`;
+                } else if (item.type === '足跡') {
+                    htmlStyle = `<div style="background-color: #6c757d; width: 6px; height: 6px; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,0.4);"></div>`;
+                    size = [6, 6]; anchor = [3, 3];
+                } else {
+                    htmlStyle = `<div style="background-color: ${color}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`;
+                }
+
+                const markerIcon = L.divIcon({ className: 'custom-div-icon', html: htmlStyle, iconSize: size, iconAnchor: anchor });
+                
+                const popupText = `
+                    <div style="min-width: 140px; text-align:center;">
+                        <span style="font-size:11px; color:#666;">${item.timestamp}</span><br>
+                        <b style="font-size:13px; color:${color};">[${item.type}] ${item.weather} / ${item.temp.toFixed(1)}℃</b>
+                        <hr style="margin:5px 0; border:0; border-top:1px solid #ddd;">
+                        ${item.type !== '乗車' ? `<button class="convert-btn" style="background:#28a745;" onclick="convertRecord(${item.id}, '乗車')">乗車に変換</button>` : ''}
+                        ${item.type !== '経由降車' ? `<button class="convert-btn" style="background:#ffc107; color:#212529;" onclick="convertRecord(${item.id}, '経由降車')">経由に変換</button>` : ''}
+                        ${item.type !== '降車' ? `<button class="convert-btn" style="background:#dc3545;" onclick="convertRecord(${item.id}, '降車')">降車に変換</button>` : ''}
+                        ${item.type !== '足跡' ? `<button class="convert-btn" style="background:#6c757d;" onclick="convertRecord(${item.id}, '足跡')">足跡に格下げ</button>` : ''}
+                    </div>
+                `;
+
+                L.marker([item.lat, item.lng], { icon: markerIcon }).bindPopup(popupText).addTo(markersLayer);
+            });
+
+            // 復活：ルート線チェックが入っている時のみ線を描画
+            if (showLines && currentLog.length > 1) {
+                const sortedLog = [...currentLog].sort((a, b) => a.id - b.id);
+
+                if (mode === 'analysis') {
+                    let lastPickup = null;
+                    let lastDay = '月'; // 曜日記憶用
+                    sortedLog.forEach(item => {
+                        if (item.type === '乗車') {
+                            lastPickup = [item.lat, item.lng];
+                            lastDay = item.day; // 乗車時の曜日を記録
+                        } else if ((item.type === '経由降車' || item.type === '降車') && lastPickup) {
+                            const lineColor = dayColors[lastDay] || '#007bff';
+                            
+                            // すべて白フチドリに統一し、少し太めに設定（メイン+4）
+                            L.polyline([lastPickup, [item.lat, item.lng]], { color: '#ffffff', weight: 7, opacity: 0.6, lineCap: 'round' }).addTo(linesLayer);
+                            // メインの線を重ねる
+                            L.polyline([lastPickup, [item.lat, item.lng]], { color: lineColor, weight: 3, opacity: 0.6, lineCap: 'round' }).addTo(linesLayer);
+                            
+                            lastPickup = (item.type === '経由降車') ? [item.lat, item.lng] : null;
+                        }
+                    });
+                } else {
+                    // 全足跡の1本線化（ボタン有無に関係なく繋ぐ）
+                    let currentTrack = [];
+                    let trackDay = '月';
+                    sortedLog.forEach(item => {
+                        if (item.dateStr === todayStr) {
+                            currentTrack.push([item.lat, item.lng]);
+                            trackDay = item.day; // 今日の曜日を取得
+                        }
+                    });
+                    if (currentTrack.length > 1) {
+                        const lineColor = dayColors[trackDay] || '#007bff';
+                        
+                        // すべて白フチドリに統一し、少し太めに設定（メイン+4）
+                        L.polyline(currentTrack, { color: '#ffffff', weight: 8, opacity: 0.7, lineCap: 'round' }).addTo(linesLayer);
+                        // メインの線を重ねる
+                        L.polyline(currentTrack, { color: lineColor, weight: 4, opacity: 0.7, lineCap: 'round' }).addTo(linesLayer);
+                    }
+                }
+            }
+        }
+
+        function onTempSliderInput() {
+            const val = parseInt(document.getElementById('temp-slider').value);
+            document.getElementById('temp-label').innerText = (val === -5) ? "全気温:" : `${val}℃`;
+            updateView();
+        }
+
+        function exportPlotCSV() {
+            const currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
+            const plots = currentLog.filter(item => item.type !== '足跡');
+            if (plots.length === 0) return alert("エクスポートする乗降データがありません");
+
+            let csv = "ID,タイプ,日時,曜日,時間,緯度,経度,天気,気温,日付フラグ\n";
+            plots.forEach(r => {
+                csv += `${r.id},${r.type},${r.timestamp},${r.day},${r.hour},${r.lat},${r.lng},${r.weather || '晴れ'},${r.temp},${r.dateStr}\n`;
+            });
+
+            downloadCSVFile(csv, "my_plot_data.csv");
+        }
+
+        // トリガー4：エクスポート直前に強制取得＆補正
+        function exportTrackCSV() {
+            if (lastTrackLat !== null && lastTrackLng !== null) {
+                const nowTime = new Date().getTime();
+                fetchForceEnvAPI(lastTrackLat, lastTrackLng).then(env => {
+                    applyNearestNeighborEnv(nowTime, env.weather, env.temp);
+                    executeTrackDownload();
+                }).catch(() => {
+                    executeTrackDownload();
+                });
+            } else {
+                executeTrackDownload();
+            }
+        }
+
+        function executeTrackDownload() {
+            const currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
+            const tracks = currentLog.filter(item => item.type === '足跡');
+            if (tracks.length === 0) return alert("エクスポートする経路データがありません");
+
+            let csv = "ID,タイプ,日時,曜日,時間,緯度,経度,天気,気温,日付フラグ\n";
+            tracks.forEach(r => {
+                csv += `${r.id},${r.type},${r.timestamp},${r.day},${r.hour},${r.lat},${r.lng},${r.weather || '晴れ'},${r.temp},${r.dateStr}\n`;
+            });
+
+            const t = new Date();
+            const yyyy = t.getFullYear();
+            const mm = String(t.getMonth() + 1).padStart(2, '0');
+            const dd = String(t.getDate()).padStart(2, '0');
+            
+            downloadCSVFile(csv, `my_track_data_${yyyy}${mm}${dd}.csv`);
+        }
+
+        function downloadCSVFile(csvContent, fileName) {
+            const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+            const blob = new Blob([bom, csvContent], { type: "text/csv;charset=utf-8;" });
+            const file = new File([blob], fileName, { type: "text/csv" });
+
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                navigator.share({ files: [file], title: 'データバックアップ', text: fileName }).catch(() => {});
+            } else {
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(blob); link.setAttribute("download", fileName); link.click();
+            }
+        }
+
+        function importCSV(input) {
+            const file = input.files[0]; if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result; const lines = text.split("\n");
+                let currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
+                let count = 0;
+
+                for (let i = 1; i < lines.length; i++) {
+                    const line = lines[i].trim(); if (!line) continue;
+                    const parts = line.split(","); if (parts.length < 7) continue;
+
+                    const id = parseInt(parts[0]); const type = parts[1]; const timestamp = parts[2];
+                    const day = parts[3]; const hour = parseInt(parts[4]); const lat = parseFloat(parts[5]);
+                    const lng = parseFloat(parts[6]); const weather = parts[7] ? parts[7].trim() : '晴れ';
+                    const temp = parts[8] ? parseFloat(parts[8]) : 20.0;
+                    const dateStr = parts[9] ? parts[9].trim() : timestamp.split(" ")[0];
+
+                    if (type === '足跡') continue; 
+
+                    const importedRecord = { id: id, type: type, timestamp: timestamp, day: day, hour: hour, lat: lat, lng: lng, weather: weather, temp: temp, dateStr: dateStr };
+                    const existingIndex = currentLog.findIndex(item => item.id === id);
+
+                    if (existingIndex !== -1) { currentLog[existingIndex] = importedRecord; } 
+                    else { currentLog.push(importedRecord); count++; }
+                }
+                localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
+                alert(`乗降データのインポートが完了しました（新規: ${count}件）`);
+                updateView(); input.value = "";
+            };
+            reader.readAsText(file);
+        }
+
+        async function fetchForceEnvAPI(lat, lng) {
+            const now = new Date().getTime();
             try {
                 const response = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&timezone=Asia%2FTokyo`);
-                const data = await response.json();
-                const code = data.current_weather.weathercode;
-                const temp = data.current_weather.temperature;
+                const data = await response.json(); const code = data.current_weather.weathercode; const temp = data.current_weather.temperature;
                 
                 let weatherType = '晴れ';
-                if ([0, 1, 2, 3].includes(code)) weatherType = '晴れ';
-                else if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) weatherType = '雨';
+                if ([0,1,2,3].includes(code)) weatherType = '晴れ';
+                else if ([51,53,55,61,63,65,80,81,82].includes(code)) weatherType = '雨';
                 else weatherType = '曇/雪';
-
+                
+                let cache = JSON.parse(localStorage.getItem('map_env_cache')) || [];
+                cache.push({ time: now, weather: weatherType, temp: temp });
+                if (cache.length > 100) cache.shift();
+                localStorage.setItem('map_env_cache', JSON.stringify(cache));
+                localStorage.setItem('map_last_env_fetch_time', now.toString());
                 return { weather: weatherType, temp: temp };
             } catch (e) {
                 return { weather: '晴れ', temp: 20.0 };
             }
         }
 
-        async function checkIsHoliday(year, month, day) {
-            try {
-                const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/JP`);
-                if (!response.ok) return false;
-                const holidays = await response.json();
-                const targetDateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                return holidays.some(h => h.date === targetDateStr);
-            } catch (e) {
-                return false;
-            }
-        }
-
-        async function recordLocation(type) {
-            document.getElementById('status').innerText = "位置・天気・気温・祝日を同時検証中...";
-            if (!navigator.geolocation) return;
-
-            setButtonsDisabled(true);
-
-            navigator.geolocation.getCurrentPosition(async (position) => {
-                const lat = position.coords.latitude;
-                const lng = position.coords.longitude;
-                
-                const now = new Date();
-                const year = now.getFullYear();
-                const month = now.getMonth() + 1;
-                const date = now.getDate();
-                const hour = now.getHours();
-                const min = String(now.getMinutes()).padStart(2, '0');
-
-                const [envData, isHoliday] = await Promise.all([
-                    fetchWeatherAndTemp(lat, lng),
-                    checkIsHoliday(year, month, date)
-                ]);
-
-                const days = ['日', '月', '火', '水', '木', '金', '土'];
-                const dayOfWeek = isHoliday ? '日' : days[now.getDay()];
-                
-                const timestamp = `${year}-${month}-${date} ${hour}:${min}`;
-                const id = now.getTime(); 
-
-                const newRecord = { 
-                    id: id, type: type, timestamp: timestamp, day: dayOfWeek, 
-                    hour: hour, lat: lat, lng: lng, weather: envData.weather, temp: envData.temp,
-                    dateStr: `${year}-${month}-${date}` 
-                };
-                
-                saveState(); 
-                let currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
-                currentLog.push(newRecord);
-                localStorage.setItem('taxi_map_log', JSON.stringify(currentLog));
-
-                const holidayStr = isHoliday ? " (祝日)" : "";
-                document.getElementById('status').innerText = `記録成功(${type}): ${dayOfWeek}曜${holidayStr} ${hour}:${min} [${envData.weather} / ${envData.temp}℃]`;
-                
-                updateTimeFilter();
-                map.setView([lat, lng], 15);
-                
-                setTimeout(() => { setButtonsDisabled(false); }, 3000);
-            }, (err) => {
-                document.getElementById('status').innerText = "GPSエラー: " + err.message;
-                setTimeout(() => { setButtonsDisabled(false); }, 3000);
-            }, { enableHighAccuracy: true, timeout: 10000 });
-        }
-
-        function loadMapData(startHour, endHour) {
-            markersLayer.clearLayers();
-            linesLayer.clearLayers(); 
+        function getClosestEnvFromCache(targetTime) {
+            const cache = JSON.parse(localStorage.getItem('map_env_cache')) || [];
+            if (cache.length === 0) return { weather: '晴れ', temp: 20.0, env_time: targetTime };
             
-            const currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
-            const showLines = document.getElementById('show-lines-check').checked;
-            const showDropoffPins = document.getElementById('show-dropoff-check').checked;
-
-            const checkedDays = Array.from(document.querySelectorAll('.day-check:checked')).map(cb => cb.value);
-            const filterRain = document.getElementById('weather-rain').checked;
-            const filterOther = document.getElementById('weather-other').checked;
+            let closest = cache[0]; 
+            let minDiff = Math.abs(targetTime - closest.time);
             
-            const tempMode = document.querySelector('input[name="temp-mode"]:checked').value;
-            const tempThreshold = parseFloat(document.getElementById('temp-slider').value);
-
-            const t = new Date();
-            const todayStr = `${t.getFullYear()}-${t.getMonth() + 1}-${t.getDate()}`;
-
-            currentLog.forEach(item => {
-                const h = item.hour;
-                const w = item.weather || '晴れ';
-                const d = item.day;
-                const tempVal = item.temp !== undefined ? item.temp : 20.0;
-
-                if (dateFilterMode === 'today' && item.dateStr !== todayStr) {
-                    return; 
+            for (let i = 1; i < cache.length; i++) {
+                let diff = Math.abs(targetTime - cache[i].time);
+                if (diff < minDiff) { 
+                    minDiff = diff; 
+                    closest = cache[i]; 
                 }
-
-                const matchesTime = (h >= startHour && h < endHour);
-                const matchesDay = checkedDays.includes(d);
-
-                let matchesWeather = false;
-                if (w === '雨' && filterRain) matchesWeather = true;
-                if ((w === '晴れ' || w === '曇/雪') && filterOther) matchesWeather = true;
-
-                let matchesTemp = true;
-                if (tempThreshold > -5) {
-                    if (tempMode === 'above') matchesTemp = (tempVal >= tempThreshold);
-                    else if (tempMode === 'below') matchesTemp = (tempVal <= tempThreshold);
-                }
-
-                if (!showDropoffPins && (item.type === '降車' || item.type === '経由降車')) {
-                    return; 
-                }
-
-                if (matchesTime && matchesDay && matchesWeather && matchesTemp) {
-                    const color = dayColors[item.day] || 'black';
-                    let htmlStyle = "";
-                    
-                    if (item.type === '降車') {
-                        htmlStyle = `<div style="background-color: white; width: 10px; height: 10px; border-radius: 50%; border: 3px solid ${color}; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`;
-                    } else if (item.type === '経由降車') {
-                        htmlStyle = `<div style="width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 12px solid ${color}; filter: drop-shadow(0px 2px 2px rgba(0,0,0,0.3));"></div>`;
-                    } else {
-                        htmlStyle = `<div style="background-color: ${color}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`;
-                    }
-
-                    const markerIcon = L.divIcon({
-                        className: 'custom-div-icon',
-                        html: htmlStyle,
-                        iconSize: [14, 14],
-                        iconAnchor: [7, 7]
-                    });
-
-                    const popupText = `
-                        <div style="min-width: 150px;">
-                            <b>[${item.type || '乗車'}] ${item.timestamp} (${item.day}曜)</b><br>
-                            天気: ${item.weather || '晴れ'} (${tempVal.toFixed(1)}℃)<br>
-                            <span style="color: #007bff; font-size:11px;">※ピンをそのまま指で引きずって微調整可能</span><br>
-                            <button class="delete-btn" onclick="deleteRecord(${item.id})">このデータを削除</button>
-                        </div>
-                    `;
-
-                    const marker = L.marker([item.lat, item.lng], { icon: markerIcon, draggable: true });
-                    marker.bindPopup(popupText).addTo(markersLayer);
-
-                    marker.on('dragstart', function() {
-                        saveState();
-                    });
-
-                    marker.on('dragend', function(e) {
-                        const newLatLng = e.target.getLatLng();
-                        let logs = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
-                        const targetIndex = logs.findIndex(log => log.id === item.id);
-                        
-                        if (targetIndex !== -1) {
-                            logs[targetIndex].lat = newLatLng.lat;
-                            logs[targetIndex].lng = newLatLng.lng;
-                            localStorage.setItem('taxi_map_log', JSON.stringify(logs));
-                            document.getElementById('status').innerText = `位置を微調整しました: [${item.type}] ("戻す"で復元可能)`;
-                            
-                            updateTimeFilter();
-                        }
-                    });
-                }
-            });
-
-            if (showLines && currentLog.length > 1) {
-                const sortedLog = [...currentLog].sort((a, b) => a.id - b.id);
-                let currentTrack = [];
-
-                sortedLog.forEach(item => {
-                    const h = item.hour;
-                    const w = item.weather || '晴れ';
-                    const d = item.day;
-                    const tempVal = item.temp !== undefined ? item.temp : 20.0;
-                    
-                    if (dateFilterMode === 'today' && item.dateStr !== todayStr) return;
-
-                    let matchesWeather = false;
-                    if (w === '雨' && filterRain) matchesWeather = true;
-                    if ((w === '晴れ' || w === '曇/雪') && filterOther) matchesWeather = true;
-
-                    let matchesTemp = true;
-                    if (tempThreshold > -5) {
-                        if (tempMode === 'above') matchesTemp = (tempVal >= tempThreshold);
-                        else if (tempMode === 'below') matchesTemp = (tempVal <= tempThreshold);
-                    }
-
-                    const filterMatch = (h >= startHour && h < endHour && checkedDays.includes(d) && matchesWeather && matchesTemp);
-
-                    if (item.type === '乗車') {
-                        currentTrack = filterMatch ? [[item.lat, item.lng]] : [];
-                    } else if (item.type === '経由降車') {
-                        if (currentTrack.length > 0 && filterMatch) {
-                            currentTrack.push([item.lat, item.lng]);
-                        }
-                    } else if (item.type === '降車') {
-                        if (currentTrack.length > 0 && filterMatch) {
-                            currentTrack.push([item.lat, item.lng]);
-                            L.polyline(currentTrack, { color: '#007bff', weight: 3, opacity: 0.6, lineCap: 'round' }).addTo(linesLayer);
-                        }
-                        currentTrack = [];
-                    }
-                });
             }
-        }
-
-        function updateTimeFilter() {
-            let start = parseInt(document.getElementById('start-time').value);
-            let end = parseInt(document.getElementById('end-time').value);
-            if (start > end) { end = start; document.getElementById('end-time').value = end; }
-            document.getElementById('start-val').innerText = start + "時";
-            document.getElementById('end-val').innerText = end + "時";
-            document.getElementById('time-range-display').innerText = `表示範囲: ${start}:00 〜 ${end}:00`;
-
-            const tempVal = parseInt(document.getElementById('temp-slider').value);
-            const tempMode = document.querySelector('input[name="temp-mode"]:checked').value;
-            const modeText = tempMode === 'above' ? '以上' : '以下';
-            if (tempVal === -5) {
-                document.getElementById('temp-val-display').innerText = "全気温";
-            } else {
-                document.getElementById('temp-val-display').innerText = `${tempVal}℃ ${modeText}`;
-            }
-
-            loadMapData(start, end);
-        }
-
-        function deleteRecord(id) {
-            if (!confirm("このプロットデータを削除してもよろしいですか？")) return;
-            saveState(); 
-            let currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
-            currentLog = currentLog.filter(item => item.id !== id);
-            localStorage.setItem('taxi_map_log', JSON.stringify(currentLog));
-            updateTimeFilter();
-        }
-
-        function exportCSV() {
-            const currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
-            if(currentLog.length === 0) return alert("エクスポートするデータがありません");
-            let csv = "ID,タイプ,日時,曜日,時間,緯度,経度,天気,気温,日付フラグ\n";
-            currentLog.forEach(r => {
-                const dStr = r.dateStr || r.timestamp.split(" ")[0];
-                csv += `${r.id},${r.type || '乗車'},${r.timestamp},${r.day},${r.hour},${r.lat},${r.lng},${r.weather || '晴れ'},${r.temp !== undefined ? r.temp : 20.0},${dStr}\n`;
-            });
-            
-            const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
-            const blob = new Blob([bom, csv], { type: "application/octet-stream" });
-            const file = new File([blob], `my_plot_data.csv`, { type: "text/csv" });
-            
-            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-                navigator.share({ files: [file], title: 'データバックアップ', text: 'プロットデータCSV' }).catch(err => {});
-            } else {
-                const link = document.createElement("a");
-                link.href = URL.createObjectURL(blob);
-                link.setAttribute("download", `my_plot_data.csv`);
-                link.click();
-            }
-        }
-
-        // 【修正完了】変数不整合（dをdayに変更）を解決した上書き＆マージインポート
-        function importCSV(input) {
-            const file = input.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                saveState(); 
-                const text = e.target.result;
-                const lines = text.split("\n");
-                let currentLog = JSON.parse(localStorage.getItem('taxi_map_log')) || [];
-                let newCount = 0;
-                let updateCount = 0;
-
-                for (let i = 1; i < lines.length; i++) {
-                    const line = lines[i].trim();
-                    if (!line) continue;
-                    const parts = line.split(",");
-                    if (parts.length < 7) continue;
-
-                    const id = parseInt(parts[0]);
-                    const type = parts[1];
-                    const timestamp = parts[2];
-                    const day = parts[3];
-                    const hour = parseInt(parts[4]);
-                    const lat = parseFloat(parts[5]);
-                    const lng = parseFloat(parts[6]);
-                    const weather = parts[7] ? parts[7].trim() : '晴れ';
-                    const temp = parts[8] ? parseFloat(parts[8]) : 20.0;
-                    const dateStr = parts[9] ? parts[9].trim() : timestamp.split(" ")[0];
-
-                    const importedRecord = { id: id, type: type, timestamp: timestamp, day: day, hour: hour, lat: lat, lng: lng, weather: weather, temp: temp, dateStr: dateStr };
-
-                    const existingIndex = currentLog.findIndex(item => item.id === id);
-
-                    if (existingIndex !== -1) {
-                        currentLog[existingIndex] = importedRecord;
-                        updateCount++;
-                    } else {
-                        currentLog.push(importedRecord);
-                        newCount++;
-                    }
-                }
-                localStorage.setItem('taxi_map_log', JSON.stringify(currentLog));
-                alert(`インポート完了しました！\n・新規追加: ${newCount}件\n・位置上書き: ${updateCount}件\n(アンドゥボタンで即座に取り消せます)`);
-                updateTimeFilter();
-                input.value = "";
-            };
-            reader.readAsText(file);
+            return { weather: closest.weather, temp: closest.temp, env_time: closest.time };
         }
     </script>
 </body>
