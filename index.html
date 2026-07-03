@@ -330,45 +330,50 @@
             setButtonsDisabled(true);
 
             navigator.geolocation.getCurrentPosition(async (position) => {
-                const lat = position.coords.latitude;
-                const lng = position.coords.longitude;
-                const now = new Date();
-                const id = now.getTime();
+                try {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const now = new Date();
+                    const id = now.getTime();
 
-                lastTrackLat = lat; lastTrackLng = lng; lastTrackTime = id;
+                    lastTrackLat = lat; lastTrackLng = lng; lastTrackTime = id;
 
-                // API強制取得 ＆ 過去足跡の動的最近傍補正
-                const env = await fetchForceEnvAPI(lat, lng);
-                applyNearestNeighborEnv(id, env.weather, env.temp);
+                    // API強制取得 ＆ 過去足跡の動的最近傍補正
+                    const env = await fetchForceEnvAPI(lat, lng);
+                    applyNearestNeighborEnv(id, env.weather, env.temp);
 
-                const year = now.getFullYear(); 
-                const month = now.getMonth() + 1; 
-                const date = now.getDate();
-                const hour = now.getHours(); 
-                const min = String(now.getMinutes()).padStart(2, '0');
-                
-                // 超軽量化されたキャッシュ版祝日判定
-                const isHoliday = await checkIsHoliday(year, month, date);
-                const days = ['日', '月', '火', '水', '木', '金', '土'];
-                const dayOfWeek = isHoliday ? '日' : days[now.getDay()];
-                const timestamp = `${year}-${month}-${date} ${hour}:${min}`;
+                    const year = now.getFullYear(); 
+                    const month = now.getMonth() + 1; 
+                    const date = now.getDate();
+                    const hour = now.getHours(); 
+                    const min = String(now.getMinutes()).padStart(2, '0');
+                    
+                    // 超軽量化されたキャッシュ版祝日判定
+                    const isHoliday = await checkIsHoliday(year, month, date);
+                    const days = ['日', '月', '火', '水', '木', '金', '土'];
+                    const dayOfWeek = isHoliday ? '日' : days[now.getDay()];
+                    const timestamp = `${year}-${month}-${date} ${hour}:${min}`;
 
-                const newRecord = { 
-                    id: id, type: type, timestamp: timestamp, day: dayOfWeek, 
-                    hour: hour, lat: lat, lng: lng, weather: env.weather, temp: env.temp,
-                    dateStr: `${year}-${month}-${date}` 
-                };
-                
-                let currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
-                currentLog.push(newRecord);
-                localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
+                    const newRecord = { 
+                        id: id, type: type, timestamp: timestamp, day: dayOfWeek, 
+                        hour: hour, lat: lat, lng: lng, weather: env.weather, temp: env.temp,
+                        dateStr: `${year}-${month}-${date}` 
+                    };
+                    
+                    let currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
+                    currentLog.push(newRecord);
+                    localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
 
-                document.getElementById('status').innerText = `記録成功(${type}): ${hour}:${min} [${env.weather}/${env.temp.toFixed(1)}℃]`;
-                isGpsLocating = false;
-                updateView();
-                map.setView([lat, lng], 15);
-                
-                setTimeout(() => { setButtonsDisabled(false); }, 3000);
+                    document.getElementById('status').innerText = `記録成功(${type}): ${hour}:${min} [${env.weather}/${env.temp.toFixed(1)}℃]`;
+                    
+                    updateView();
+                    map.setView([lat, lng], 15);
+                } catch (error) {
+                    document.getElementById('status').innerText = "記録エラー: 再試行してください";
+                } finally {
+                    isGpsLocating = false;
+                    setTimeout(() => { setButtonsDisabled(false); }, 3000);
+                }
             }, (err) => {
                 document.getElementById('status').innerText = "GPS取得失敗: " + err.message;
                 isGpsLocating = false;
@@ -594,7 +599,7 @@
             if (showLines && currentLog.length > 1) {
                 const sortedLog = [...currentLog].sort((a, b) => a.id - b.id);
 
-                if (mode === 'analysis') {
+                if (mode === 'analysis' && trackMode === 'none') {
                     let lastPickup = null;
                     let lastDay = '月'; // 曜日記憶用
                     sortedLog.forEach(item => {
@@ -603,32 +608,35 @@
                             lastDay = item.day; // 乗車時の曜日を記録
                         } else if ((item.type === '経由降車' || item.type === '降車') && lastPickup) {
                             const lineColor = dayColors[lastDay] || '#007bff';
-                            
-                            // すべて白フチドリに統一し、少し太めに設定（メイン+4）
                             L.polyline([lastPickup, [item.lat, item.lng]], { color: '#ffffff', weight: 7, opacity: 0.6, lineCap: 'round' }).addTo(linesLayer);
-                            // メインの線を重ねる
                             L.polyline([lastPickup, [item.lat, item.lng]], { color: lineColor, weight: 3, opacity: 0.6, lineCap: 'round' }).addTo(linesLayer);
-                            
                             lastPickup = (item.type === '経由降車') ? [item.lat, item.lng] : null;
                         }
                     });
                 } else {
-                    // 全足跡の1本線化（ボタン有無に関係なく繋ぐ）
-                    let currentTrack = [];
-                    let trackDay = '月';
-                    sortedLog.forEach(item => {
-                        if (item.dateStr === todayStr) {
-                            currentTrack.push([item.lat, item.lng]);
-                            trackDay = item.day; // 今日の曜日を取得
+                    let trackPoints = sortedLog.filter(item => item.dateStr === targetDateStr);
+                    if (trackPoints.length > 1) {
+                        let isOccupied = false;
+                        let currentDay = '月';
+
+                        for (let i = 0; i < trackPoints.length - 1; i++) {
+                            const p1 = trackPoints[i];
+                            const p2 = trackPoints[i+1];
+
+                            if (p1.type === '乗車') {
+                                isOccupied = true;
+                                currentDay = p1.day;
+                            } else if (p1.type === '降車') {
+                                isOccupied = false;
+                            }
+
+                            const lineColor = isOccupied ? (dayColors[currentDay] || '#007bff') : '#a0aab5';
+                            const baseWeight = isOccupied ? 4 : 3;
+                            const baseOpacity = isOccupied ? 0.8 : 0.6;
+
+                            L.polyline([[p1.lat, p1.lng], [p2.lat, p2.lng]], { color: '#ffffff', weight: baseWeight + 4, opacity: baseOpacity, lineCap: 'round' }).addTo(linesLayer);
+                            L.polyline([[p1.lat, p1.lng], [p2.lat, p2.lng]], { color: lineColor, weight: baseWeight, opacity: baseOpacity, lineCap: 'round' }).addTo(linesLayer);
                         }
-                    });
-                    if (currentTrack.length > 1) {
-                        const lineColor = dayColors[trackDay] || '#007bff';
-                        
-                        // すべて白フチドリに統一し、少し太めに設定（メイン+4）
-                        L.polyline(currentTrack, { color: '#ffffff', weight: 8, opacity: 0.7, lineCap: 'round' }).addTo(linesLayer);
-                        // メインの線を重ねる
-                        L.polyline(currentTrack, { color: lineColor, weight: 4, opacity: 0.7, lineCap: 'round' }).addTo(linesLayer);
                     }
                 }
             }
