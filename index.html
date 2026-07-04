@@ -507,6 +507,7 @@
             }, { enableHighAccuracy: true, timeout: 10000 });
         }
 
+        
         function convertRecord(id, newType) {
             let currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
             const idx = currentLog.findIndex(item => item.id === id);
