@@ -153,6 +153,9 @@
 
         <div class="io-container">
             <div class="io-row-btns">
+                <div class="btn-io btn-io-main" onclick="syncPerfectWeather()" style="background:#d1e7dd; border-color:#badbcc; color:#0f5132;">📶 過去の気象データを完全補完</div>
+            </div>
+            <div class="io-row-btns">
                 <label class="btn-io">
                     📥 乗降CSV読込
                     <input type="file" id="file-input" accept=".csv" onchange="importCSV(this)">
@@ -326,8 +329,14 @@
         function recordLocation(type) {
             if (isGpsLocating) return;
             isGpsLocating = true;
-            document.getElementById('status').innerText = "データ取得・環境検証中...";
+            document.getElementById('status').innerText = "データ取得中...";
             setButtonsDisabled(true);
+
+            // 【完全独立】GPSや通信の遅延・成否に関わらず、絶対に3秒でグレーアウトを強制解除する
+            setTimeout(() => {
+                isGpsLocating = false;
+                setButtonsDisabled(false);
+            }, 3000);
 
             navigator.geolocation.getCurrentPosition(async (position) => {
                 try {
@@ -338,9 +347,14 @@
 
                     lastTrackLat = lat; lastTrackLng = lng; lastTrackTime = id;
 
-                    // API強制取得 ＆ 過去足跡の動的最近傍補正
-                    const env = await fetchForceEnvAPI(lat, lng);
-                    applyNearestNeighborEnv(id, env.weather, env.temp);
+                    let w = null, t = null;
+                    try {
+                        const env = await fetchForceEnvAPI(lat, lng);
+                        w = env.weather; t = env.temp;
+                        applyNearestNeighborEnv(id, w, t);
+                    } catch (e) {
+                        ensureLatestWeather(lat, lng); // 失敗時は空欄のまま進み、裏で成功するまで粘る
+                    }
 
                     const year = now.getFullYear(); 
                     const month = now.getMonth() + 1; 
@@ -348,7 +362,6 @@
                     const hour = now.getHours(); 
                     const min = String(now.getMinutes()).padStart(2, '0');
                     
-                    // 超軽量化されたキャッシュ版祝日判定
                     const isHoliday = await checkIsHoliday(year, month, date);
                     const days = ['日', '月', '火', '水', '木', '金', '土'];
                     const dayOfWeek = isHoliday ? '日' : days[now.getDay()];
@@ -356,7 +369,7 @@
 
                     const newRecord = { 
                         id: id, type: type, timestamp: timestamp, day: dayOfWeek, 
-                        hour: hour, lat: lat, lng: lng, weather: env.weather, temp: env.temp,
+                        hour: hour, lat: lat, lng: lng, weather: w, temp: t,
                         dateStr: `${year}-${month}-${date}` 
                     };
                     
@@ -364,20 +377,14 @@
                     currentLog.push(newRecord);
                     localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
 
-                    document.getElementById('status').innerText = `記録成功(${type}): ${hour}:${min} [${env.weather}/${env.temp.toFixed(1)}℃]`;
-                    
+                    document.getElementById('status').innerText = `記録成功(${type}): ${hour}:${min}`;
                     updateView();
                     map.setView([lat, lng], 15);
                 } catch (error) {
-                    document.getElementById('status').innerText = "記録エラー: 再試行してください";
-                } finally {
-                    isGpsLocating = false;
-                    setTimeout(() => { setButtonsDisabled(false); }, 3000);
+                    document.getElementById('status').innerText = "内部処理エラー";
                 }
             }, (err) => {
                 document.getElementById('status').innerText = "GPS取得失敗: " + err.message;
-                isGpsLocating = false;
-                setTimeout(() => { setButtonsDisabled(false); }, 3000);
             }, { enableHighAccuracy: true, timeout: 10000 });
         }
 
@@ -410,11 +417,20 @@
                 let is30MinCruise = (nowTime - lastFetch) >= 1800000;
 
                 if (isSleepRecovery || is30MinCruise) {
-                    const env = await fetchForceEnvAPI(lat, lng);
-                    applyNearestNeighborEnv(nowTime, env.weather, env.temp);
-                    await writeTrackRecord(nowTime, lat, lng, now, env.weather, env.temp, nowTime);
+                    let w = null, t = null;
+                    try {
+                        const env = await fetchForceEnvAPI(lat, lng);
+                        w = env.weather; t = env.temp;
+                        applyNearestNeighborEnv(nowTime, w, t);
+                    } catch (e) {
+                        ensureLatestWeather(lat, lng);
+                    }
+                    await writeTrackRecord(nowTime, lat, lng, now, w, t, nowTime);
                 } else {
                     const env = getClosestEnvFromCache(nowTime);
+                    if (env.weather === null) {
+                         ensureLatestWeather(lat, lng); // 有効なキャッシュがなければ裏で取得へ
+                    }
                     await writeTrackRecord(nowTime, lat, lng, now, env.weather, env.temp, env.env_time);
                 }
             }, () => {}, { enableHighAccuracy: true, timeout: 10000 });
@@ -580,36 +596,52 @@
 
                 const markerIcon = L.divIcon({ className: 'custom-div-icon', html: htmlStyle, iconSize: size, iconAnchor: anchor });
                 
+                // 天気が未取得（null）の場合は「取得中」または「未補完」として扱う
+                const tempStr = (item.temp !== null && item.temp !== undefined) ? item.temp.toFixed(1) + '℃' : '--℃';
+                const weatherStr = item.weather || '未補完';
+
+                // 足跡データは絶対に固定。格上げされたピンのみドラッグ移動を許可
+                const isDraggable = item.type !== '足跡';
+                const dragNotice = isDraggable ? `<div style="font-size:10px; color:#888; margin-top:4px;">※長押しで位置修正が可能</div>` : '';
+
                 const popupText = `
                     <div style="min-width: 140px; text-align:center;">
                         <span style="font-size:11px; color:#666;">${item.timestamp}</span><br>
-                        <b style="font-size:13px; color:${color};">[${item.type}] ${item.weather} / ${item.temp.toFixed(1)}℃</b>
+                        <b style="font-size:13px; color:${color};">[${item.type}] ${weatherStr} / ${tempStr}</b>
                         <hr style="margin:5px 0; border:0; border-top:1px solid #ddd;">
                         ${item.type !== '乗車' ? `<button class="convert-btn" style="background:#28a745;" onclick="convertRecord(${item.id}, '乗車')">乗車に変換</button>` : ''}
                         ${item.type !== '経由降車' ? `<button class="convert-btn" style="background:#ffc107; color:#212529;" onclick="convertRecord(${item.id}, '経由降車')">経由に変換</button>` : ''}
                         ${item.type !== '降車' ? `<button class="convert-btn" style="background:#dc3545;" onclick="convertRecord(${item.id}, '降車')">降車に変換</button>` : ''}
                         ${item.type !== '足跡' ? `<button class="convert-btn" style="background:#6c757d;" onclick="convertRecord(${item.id}, '足跡')">足跡に格下げ</button>` : ''}
+                        ${dragNotice}
                     </div>
                 `;
 
-                L.marker([item.lat, item.lng], { icon: markerIcon }).bindPopup(popupText).addTo(markersLayer);
+                const marker = L.marker([item.lat, item.lng], { icon: markerIcon, draggable: isDraggable }).bindPopup(popupText).addTo(markersLayer);
+                
+                if (isDraggable) {
+                    marker.on('dragend', function(e) {
+                        const newPos = e.target.getLatLng();
+                        updateRecordLocation(item.id, newPos.lat, newPos.lng);
+                    });
+                }
             });
 
-            // 復活：ルート線チェックが入っている時のみ線を描画
             if (showLines && currentLog.length > 1) {
                 const sortedLog = [...currentLog].sort((a, b) => a.id - b.id);
 
                 if (mode === 'analysis' && trackMode === 'none') {
                     let lastPickup = null;
-                    let lastDay = '月'; // 曜日記憶用
+                    let lastDay = '月';
                     sortedLog.forEach(item => {
                         if (item.type === '乗車') {
                             lastPickup = [item.lat, item.lng];
-                            lastDay = item.day; // 乗車時の曜日を記録
+                            lastDay = item.day;
                         } else if ((item.type === '経由降車' || item.type === '降車') && lastPickup) {
                             const lineColor = dayColors[lastDay] || '#007bff';
-                            L.polyline([lastPickup, [item.lat, item.lng]], { color: '#ffffff', weight: 7, opacity: 0.6, lineCap: 'round' }).addTo(linesLayer);
-                            L.polyline([lastPickup, [item.lat, item.lng]], { color: lineColor, weight: 3, opacity: 0.6, lineCap: 'round' }).addTo(linesLayer);
+                            // 線の重なり対策：不透明度を 0.4 に下げて半透明化
+                            L.polyline([lastPickup, [item.lat, item.lng]], { color: '#ffffff', weight: 7, opacity: 0.4, lineCap: 'round' }).addTo(linesLayer);
+                            L.polyline([lastPickup, [item.lat, item.lng]], { color: lineColor, weight: 3, opacity: 0.4, lineCap: 'round' }).addTo(linesLayer);
                             lastPickup = (item.type === '経由降車') ? [item.lat, item.lng] : null;
                         }
                     });
@@ -632,7 +664,8 @@
 
                             const lineColor = isOccupied ? (dayColors[currentDay] || '#007bff') : '#a0aab5';
                             const baseWeight = isOccupied ? 4 : 3;
-                            const baseOpacity = isOccupied ? 0.8 : 0.6;
+                            // 線の重なり対策：実車0.4 / 空車0.3 の半透明化
+                            const baseOpacity = isOccupied ? 0.4 : 0.3;
 
                             L.polyline([[p1.lat, p1.lng], [p2.lat, p2.lng]], { color: '#ffffff', weight: baseWeight + 4, opacity: baseOpacity, lineCap: 'round' }).addTo(linesLayer);
                             L.polyline([[p1.lat, p1.lng], [p2.lat, p2.lng]], { color: lineColor, weight: baseWeight, opacity: baseOpacity, lineCap: 'round' }).addTo(linesLayer);
@@ -742,41 +775,142 @@
 
         async function fetchForceEnvAPI(lat, lng) {
             const now = new Date().getTime();
-            try {
-                const response = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&timezone=Asia%2FTokyo`);
-                const data = await response.json(); const code = data.current_weather.weathercode; const temp = data.current_weather.temperature;
-                
-                let weatherType = '晴れ';
-                if ([0,1,2,3].includes(code)) weatherType = '晴れ';
-                else if ([51,53,55,61,63,65,80,81,82].includes(code)) weatherType = '雨';
-                else weatherType = '曇/雪';
-                
-                let cache = JSON.parse(localStorage.getItem('map_env_cache')) || [];
-                cache.push({ time: now, weather: weatherType, temp: temp });
-                if (cache.length > 100) cache.shift();
-                localStorage.setItem('map_env_cache', JSON.stringify(cache));
-                localStorage.setItem('map_last_env_fetch_time', now.toString());
-                return { weather: weatherType, temp: temp };
-            } catch (e) {
-                return { weather: '晴れ', temp: 20.0 };
-            }
+            const response = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&timezone=Asia%2FTokyo`);
+            if (!response.ok) throw new Error("API通信エラー");
+            
+            const data = await response.json(); 
+            const code = data.current_weather.weathercode; 
+            const temp = data.current_weather.temperature;
+            
+            let weatherType = '晴れ';
+            if ([0,1,2,3].includes(code)) weatherType = '晴れ';
+            else if ([51,53,55,61,63,65,80,81,82].includes(code)) weatherType = '雨';
+            else weatherType = '曇/雪';
+            
+            let cache = JSON.parse(localStorage.getItem('map_env_cache')) || [];
+            cache.push({ time: now, weather: weatherType, temp: temp });
+            if (cache.length > 100) cache.shift();
+            
+            localStorage.setItem('map_env_cache', JSON.stringify(cache));
+            localStorage.setItem('map_last_env_fetch_time', now.toString());
+            return { weather: weatherType, temp: temp };
         }
 
         function getClosestEnvFromCache(targetTime) {
             const cache = JSON.parse(localStorage.getItem('map_env_cache')) || [];
-            if (cache.length === 0) return { weather: '晴れ', temp: 20.0, env_time: targetTime };
+            if (cache.length === 0) return { weather: null, temp: null, env_time: 0 };
             
             let closest = cache[0]; 
             let minDiff = Math.abs(targetTime - closest.time);
             
             for (let i = 1; i < cache.length; i++) {
                 let diff = Math.abs(targetTime - cache[i].time);
-                if (diff < minDiff) { 
-                    minDiff = diff; 
-                    closest = cache[i]; 
-                }
+                if (diff < minDiff) { minDiff = diff; closest = cache[i]; }
             }
+            
+            // 30分 (1800000ms) 以上離れた古いデータは無効とみなし、絶対に流用しない
+            if (minDiff > 1800000) return { weather: null, temp: null, env_time: 0 };
             return { weather: closest.weather, temp: closest.temp, env_time: closest.time };
+        }
+
+        // バックグラウンドでの粘り強い気象取得ロジック
+        let weatherRetryTimer = null;
+        async function ensureLatestWeather(lat, lng) {
+            try {
+                const env = await fetchForceEnvAPI(lat, lng);
+                const now = new Date().getTime();
+                applyNearestNeighborEnv(now, env.weather, env.temp); // 成功時に遡って上書き
+                updateView();
+            } catch (e) {
+                // 失敗した場合は1分後に再試行（無限ループで粘る）
+                clearTimeout(weatherRetryTimer);
+                weatherRetryTimer = setTimeout(() => ensureLatestWeather(lat, lng), 60000);
+            }
+        }
+
+        // Wi-Fi環境用フェイルセーフ：過去データの完全補完
+        async function syncPerfectWeather() {
+            document.getElementById('status').innerText = "気象データを一括取得中...";
+            try {
+                let currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
+                let completedDates = JSON.parse(localStorage.getItem('completed_weather_dates')) || [];
+                
+                const t = new Date();
+                const todayStr = `${t.getFullYear()}-${t.getMonth() + 1}-${t.getDate()}`;
+                
+                // 今日以外の過去データで、まだ補完されていない日付を抽出
+                let targetDates = [...new Set(currentLog.map(item => item.dateStr))];
+                targetDates = targetDates.filter(d => d !== todayStr && !completedDates.includes(d));
+                
+                if (targetDates.length === 0) {
+                    alert("補完が必要な過去データはありません。");
+                    document.getElementById('status').innerText = "システム稼働中";
+                    return;
+                }
+
+                const lat = lastTrackLat || 33.5902;
+                const lng = lastTrackLng || 130.4207;
+
+                // Open-Meteoから過去31日分の1時間ごとのデータを一括取得
+                const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=temperature_2m,weathercode&past_days=31&forecast_days=1&timezone=Asia%2FTokyo`);
+                if (!res.ok) throw new Error("気象履歴の取得に失敗しました");
+                const data = await res.json();
+                
+                const times = data.hourly.time;
+                const codes = data.hourly.weathercode;
+                const temps = data.hourly.temperature_2m;
+                let updatedCount = 0;
+
+                currentLog = currentLog.map(item => {
+                    if (targetDates.includes(item.dateStr)) {
+                        // ログの時間をAPIのフォーマット(YYYY-MM-DDTHH:00)に変換
+                        const parts = item.timestamp.split(" ");
+                        const dParts = parts[0].split("-");
+                        const padM = String(dParts[1]).padStart(2, '0');
+                        const padD = String(dParts[2]).padStart(2, '0');
+                        const padH = String(item.hour).padStart(2, '0');
+                        const targetTimeStr = `${dParts[0]}-${padM}-${padD}T${padH}:00`;
+
+                        const idx = times.indexOf(targetTimeStr);
+                        if (idx !== -1) {
+                            const c = codes[idx];
+                            let w = '晴れ';
+                            if ([0,1,2,3].includes(c)) w = '晴れ';
+                            else if ([51,53,55,61,63,65,80,81,82].includes(c)) w = '雨';
+                            else w = '曇/雪';
+
+                            item.weather = w;
+                            item.temp = temps[idx];
+                            updatedCount++;
+                        }
+                    }
+                    return item;
+                });
+
+                localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
+                targetDates.forEach(d => completedDates.push(d));
+                localStorage.setItem('completed_weather_dates', JSON.stringify(completedDates));
+
+                alert(`${targetDates.length}日分（計${updatedCount}件）の気象データを完全補完しました！\n※取得済み期間は二度と再取得しません。`);
+                document.getElementById('status').innerText = "システム稼働中";
+                updateView();
+            } catch (e) {
+                alert("エラー: " + e.message);
+                document.getElementById('status').innerText = "通信エラー";
+            }
+        }
+
+        // 移動させた格上げピンの新しい緯度経度をログに上書き保存する関数
+        function updateRecordLocation(id, newLat, newLng) {
+            let currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
+            const idx = currentLog.findIndex(item => item.id === id);
+            if (idx !== -1) {
+                currentLog[idx].lat = newLat;
+                currentLog[idx].lng = newLng;
+                localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
+                document.getElementById('status').innerText = `位置を手動で修正しました`;
+                updateView();
+            }
         }
     </script>
 </body>
