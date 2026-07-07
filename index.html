@@ -185,6 +185,9 @@
         let lastTrackLng = null;
         let lastTrackTime = 0;
 
+        // 【追加】タップされた運行グループ（前回の降車〜今回の降車）を記憶する変数
+        let activeTripId = null;
+
         // アンドゥ・リドゥ履歴管理スタック（指定通り3件分を厳格にキープ）
         let undoStack = [];
         let redoStack = [];
@@ -586,12 +589,21 @@
             const tempThreshold = parseFloat(document.getElementById('temp-slider').value);
             const tempMode = document.getElementById('temp-mode').value;
 
-            // 復活：表示ON/OFFステータスの取得
             const showLines = document.getElementById('show-lines-check').checked;
             const showPickup = document.getElementById('show-pickup-check').checked;
             const showDropoff = document.getElementById('show-dropoff-check').checked;
 
-            const currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
+            let currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
+            currentLog.sort((a, b) => a.id - b.id); // 正確な時系列に並び替え
+
+            // 【追加】前回の「降車」ボタンの直後から今回の「降車」ボタンまでを、押し遅れ期間も含めて1つの運行グループ(tripGrp)に束ねる
+            let currentTripGrp = currentLog.length > 0 ? currentLog[0].id : 0;
+            currentLog.forEach(item => {
+                item.tripGrp = currentTripGrp;
+                if (item.type === '降車') {
+                    currentTripGrp = item.id + 1;
+                }
+            });
             
             const t = new Date();
             const todayStr = `${t.getFullYear()}-${t.getMonth() + 1}-${t.getDate()}`;
@@ -606,11 +618,12 @@
             else if (trackMode === 'yesterday') targetDateStr = yesterdayStr;
             else if (trackMode === 'daybefore') targetDateStr = dayBeforeStr;
 
+            let highlightLayers = []; // 最前面へ一括浮上させるLeafletオブジェクトの避難所
+
             currentLog.forEach(item => {
                 if (targetDateStr && item.dateStr !== targetDateStr) return;
                 if (item.type === '足跡' && (mode === 'analysis' && trackMode === 'none')) return;
 
-                // 復活：チェックが外れているピンの描画をスキップ
                 if (!showPickup && item.type === '乗車') return;
                 if (!showDropoff && (item.type === '降車' || item.type === '経由降車')) return;
 
@@ -627,7 +640,7 @@
                     if (item.weather === '雨' && !filterRain) return;
                     if ((item.weather === '晴れ' || item.weather === '曇/雪') && !filterOther) return;
                     if (tempThreshold > -5) {
-                        const tempVal = item.temp !== undefined ? item.temp : 20.0;
+                        const tempVal = item.temp !== undefined && item.temp !== null ? item.temp : 20.0;
                         if (tempMode === 'above' && tempVal < tempThreshold) return;
                         if (tempMode === 'below' && tempVal > tempThreshold) return;
                     }
@@ -636,24 +649,27 @@
                 const color = dayColors[item.day] || 'black';
                 let htmlStyle = ""; let size = [14, 14]; let anchor = [7, 7];
 
+                // 【追加】タップされている運行グループ(tripGrp)に属する要素は濃淡とサイズを変えて差別化
+                const isHighlighted = (activeTripId === item.tripGrp);
+                const focusStyle = isHighlighted ? `border-width: 4px; box-shadow: 0 0 12px ${color}; transform: scale(1.3);` : `box-shadow: 0 2px 4px rgba(0,0,0,0.3);`;
+                const trackOpacity = isHighlighted ? `1.0` : `0.4`;
+
                 if (item.type === '降車') {
-                    htmlStyle = `<div style="background-color: white; width: 10px; height: 10px; border-radius: 50%; border: 3px solid ${color}; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`;
+                    htmlStyle = `<div style="background-color: white; width: 10px; height: 10px; border-radius: 50%; border: 3px solid ${color}; ${focusStyle}"></div>`;
                 } else if (item.type === '経由降車') {
-                    htmlStyle = `<div style="width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 12px solid ${color}; filter: drop-shadow(0px 2px 2px rgba(0,0,0,0.3));"></div>`;
+                    htmlStyle = `<div style="width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 12px solid ${color}; filter: drop-shadow(0px 2px 2px rgba(0,0,0,0.3)); ${isHighlighted ? 'transform: scale(1.3);' : ''}"></div>`;
                 } else if (item.type === '足跡') {
-                    htmlStyle = `<div style="background-color: #6c757d; width: 6px; height: 6px; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,0.4);"></div>`;
+                    htmlStyle = `<div style="background-color: #6c757d; width: 6px; height: 6px; border-radius: 50%; opacity: ${trackOpacity}; ${isHighlighted ? 'background-color: #111; transform: scale(1.6);' : ''}"></div>`;
                     size = [6, 6]; anchor = [3, 3];
                 } else {
-                    htmlStyle = `<div style="background-color: ${color}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`;
+                    htmlStyle = `<div style="background-color: ${color}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; ${focusStyle}"></div>`;
                 }
 
                 const markerIcon = L.divIcon({ className: 'custom-div-icon', html: htmlStyle, iconSize: size, iconAnchor: anchor });
                 
-                // 天気が未取得（null）の場合は「取得中」または「未補完」として扱う
                 const tempStr = (item.temp !== null && item.temp !== undefined) ? item.temp.toFixed(1) + '℃' : '--℃';
                 const weatherStr = item.weather || '未補完';
 
-                // 🛑 地図スクロール時の誤作動を完全に防ぐため、ピン移動（ドラッグ）機能を廃止
                 const popupText = `
                     <div style="min-width: 140px; text-align:center;">
                         <span style="font-size:11px; color:#666;">${item.timestamp}</span><br>
@@ -666,30 +682,49 @@
                     </div>
                 `;
 
-                // draggableを一律falseに固定
-                L.marker([item.lat, item.lng], { icon: markerIcon, draggable: false }).bindPopup(popupText).addTo(markersLayer);
+                const marker = L.marker([item.lat, item.lng], { icon: markerIcon, draggable: false }).bindPopup(popupText).addTo(markersLayer);
+                
+                // ピンをタップした際、その運行全体を記憶して再描画
+                marker.on('click', () => {
+                    activeTripId = item.tripGrp;
+                    updateView();
+                });
+
+                if (isHighlighted) {
+                    marker.setZIndexOffset(2000); // 選択された運行のピンマークを前面へ
+                }
             });
 
             if (showLines && currentLog.length > 1) {
-                const sortedLog = [...currentLog].sort((a, b) => a.id - b.id);
-
                 if (mode === 'analysis' && trackMode === 'none') {
                     let lastPickup = null;
                     let lastDay = '月';
-                    sortedLog.forEach(item => {
+                    let lastPickupGrp = null;
+
+                    currentLog.forEach(item => {
                         if (item.type === '乗車') {
                             lastPickup = [item.lat, item.lng];
                             lastDay = item.day;
+                            lastPickupGrp = item.tripGrp;
                         } else if ((item.type === '経由降車' || item.type === '降車') && lastPickup) {
+                            const isHighlighted = (activeTripId === item.tripGrp || activeTripId === lastPickupGrp);
+                            const activeWeight = isHighlighted ? 8 : 3;
+                            const activeOpacity = isHighlighted ? 1.0 : 0.4;
                             const lineColor = dayColors[lastDay] || '#007bff';
-                            // 線の重なり対策：不透明度を 0.4 に下げて半透明化
-                            L.polyline([lastPickup, [item.lat, item.lng]], { color: '#ffffff', weight: 7, opacity: 0.4, lineCap: 'round' }).addTo(linesLayer);
-                            L.polyline([lastPickup, [item.lat, item.lng]], { color: lineColor, weight: 3, opacity: 0.4, lineCap: 'round' }).addTo(linesLayer);
+                            
+                            const bgLine = L.polyline([lastPickup, [item.lat, item.lng]], { color: '#ffffff', weight: activeWeight + 4, opacity: activeOpacity, lineCap: 'round' }).addTo(linesLayer);
+                            const fgLine = L.polyline([lastPickup, [item.lat, item.lng]], { color: lineColor, weight: activeWeight, opacity: activeOpacity, lineCap: 'round' }).addTo(linesLayer);
+                            
+                            bgLine.on('click', () => { activeTripId = item.tripGrp; updateView(); });
+                            fgLine.on('click', () => { activeTripId = item.tripGrp; updateView(); });
+
+                            if (isHighlighted) highlightLayers.push(bgLine, fgLine);
+                            
                             lastPickup = (item.type === '経由降車') ? [item.lat, item.lng] : null;
                         }
                     });
                 } else {
-                    let trackPoints = sortedLog.filter(item => item.dateStr === targetDateStr);
+                    let trackPoints = currentLog.filter(item => item.dateStr === targetDateStr);
                     if (trackPoints.length > 1) {
                         let isOccupied = false;
                         let currentDay = '月';
@@ -705,17 +740,31 @@
                                 isOccupied = false;
                             }
 
+                            const isHighlighted = (activeTripId === p1.tripGrp);
                             const lineColor = isOccupied ? (dayColors[currentDay] || '#007bff') : '#a0aab5';
                             const baseWeight = isOccupied ? 4 : 3;
-                            // 線の重なり対策：実車0.4 / 空車0.3 の半透明化
-                            const baseOpacity = isOccupied ? 0.4 : 0.3;
+                            
+                            // ハイライト対象の線は実車・空車戻り線ともに太く濃く表現
+                            const activeWeight = isHighlighted ? baseWeight + 4 : baseWeight;
+                            const activeOpacity = isHighlighted ? 1.0 : (isOccupied ? 0.4 : 0.3);
 
-                            L.polyline([[p1.lat, p1.lng], [p2.lat, p2.lng]], { color: '#ffffff', weight: baseWeight + 4, opacity: baseOpacity, lineCap: 'round' }).addTo(linesLayer);
-                            L.polyline([[p1.lat, p1.lng], [p2.lat, p2.lng]], { color: lineColor, weight: baseWeight, opacity: baseOpacity, lineCap: 'round' }).addTo(linesLayer);
+                            const bgLine = L.polyline([[p1.lat, p1.lng], [p2.lat, p2.lng]], { color: '#ffffff', weight: activeWeight + 4, opacity: activeOpacity, lineCap: 'round' }).addTo(linesLayer);
+                            const fgLine = L.polyline([[p1.lat, p1.lng], [p2.lat, p2.lng]], { color: lineColor, weight: activeWeight, opacity: activeOpacity, lineCap: 'round' }).addTo(linesLayer);
+                            
+                            // 軌跡線を直接タップしても運行セグメント全体のハイライトを誘発
+                            bgLine.on('click', () => { activeTripId = p1.tripGrp; updateView(); });
+                            fgLine.on('click', () => { activeTripId = p1.tripGrp; updateView(); });
+
+                            if (isHighlighted) {
+                                highlightLayers.push(bgLine, fgLine);
+                            }
                         }
                     }
                 }
             }
+
+            // 【追加】対象セグメントを構成するポリラインを他のすべての線の上（最前面）へ物理浮上
+            highlightLayers.forEach(l => l.bringToFront());
         }
 
         function onTempSliderInput() {
@@ -731,7 +780,10 @@
 
             let csv = "ID,タイプ,日時,曜日,時間,緯度,経度,天気,気温,日付フラグ\n";
             plots.forEach(r => {
-                csv += `${r.id},${r.type},${r.timestamp},${r.day},${r.hour},${r.lat},${r.lng},${r.weather || '晴れ'},${r.temp},${r.dateStr}\n`;
+                // 【修正】null値は無理に晴れに丸め込まず、空欄のまま正直に出力
+                const w = r.weather ? r.weather : '';
+                const t = (r.temp !== null && r.temp !== undefined) ? r.temp : '';
+                csv += `${r.id},${r.type},${r.timestamp},${r.day},${r.hour},${r.lat},${r.lng},${w},${t},${r.dateStr}\n`;
             });
 
             downloadCSVFile(csv, "my_plot_data.csv");
@@ -759,7 +811,10 @@
 
             let csv = "ID,タイプ,日時,曜日,時間,緯度,経度,天気,気温,日付フラグ\n";
             tracks.forEach(r => {
-                csv += `${r.id},${r.type},${r.timestamp},${r.day},${r.hour},${r.lat},${r.lng},${r.weather || '晴れ'},${r.temp},${r.dateStr}\n`;
+                // 【修正】null値は無理に晴れに丸め込まず、空欄のまま正直に出力
+                const w = r.weather ? r.weather : '';
+                const t = (r.temp !== null && r.temp !== undefined) ? r.temp : '';
+                csv += `${r.id},${r.type},${r.timestamp},${r.day},${r.hour},${r.lat},${r.lng},${w},${t},${r.dateStr}\n`;
             });
 
             const t = new Date();
@@ -798,8 +853,10 @@
 
                     const id = parseInt(parts[0]); const type = parts[1]; const timestamp = parts[2];
                     const day = parts[3]; const hour = parseInt(parts[4]); const lat = parseFloat(parts[5]);
-                    const lng = parseFloat(parts[6]); const weather = parts[7] ? parts[7].trim() : '晴れ';
-                    const temp = parts[8] ? parseFloat(parts[8]) : 20.0;
+                    const lng = parseFloat(parts[6]); 
+                    // 【修正】空欄で読み込まれたデータは20度晴れに偽装せず、null（未補完）のまま正しく維持する
+                    const weather = (parts[7] && parts[7].trim() !== '') ? parts[7].trim() : null;
+                    const temp = (parts[8] && parts[8].trim() !== '') ? parseFloat(parts[8]) : null;
                     const dateStr = parts[9] ? parts[9].trim() : timestamp.split(" ")[0];
 
                     // 足跡データの除外処理を完全に撤廃。同一IDによる上書き復元を可能にする
@@ -879,22 +936,26 @@
             }
         }
 
-        // Wi-Fi環境用フェイルセーフ：過去データの完全補完
+        // Wi-Fi環境用フェイルセーフ：過去データの完全補完（開始日・終了日期間管理 ＆ 失敗即ブレーキ仕様）
         async function syncPerfectWeather() {
             document.getElementById('status').innerText = "気象データを一括取得中...";
             try {
                 let currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
-                let completedDates = JSON.parse(localStorage.getItem('completed_weather_dates')) || [];
+                
+                // 【修正】一括補完の基準を細切れの配列から「 weather_sync_end（終了日）」という1本の期間情報に変更
+                let syncEndStr = localStorage.getItem('weather_sync_end') || '2000-01-01';
+                const syncEnd = new Date(syncEndStr.replace(/-/g, '/'));
                 
                 const t = new Date();
                 const todayStr = `${t.getFullYear()}-${t.getMonth() + 1}-${t.getDate()}`;
                 
-                // 今日以外の過去データで、まだ補完されていない日付を抽出
+                // 終了日よりも未来で、今日ではない過去日付を時系列順に抽出
                 let targetDates = [...new Set(currentLog.map(item => item.dateStr))];
-                targetDates = targetDates.filter(d => d !== todayStr && !completedDates.includes(d));
+                targetDates = targetDates.filter(d => d !== todayStr && new Date(d.replace(/-/g, '/')) > syncEnd);
+                targetDates.sort((a, b) => new Date(a.replace(/-/g, '/')) - new Date(b.replace(/-/g, '/')));
                 
                 if (targetDates.length === 0) {
-                    alert("補完が必要な過去データはありません。");
+                    alert("補完が必要な未補完期間はありません。");
                     document.getElementById('status').innerText = "システム稼働中";
                     return;
                 }
@@ -902,7 +963,6 @@
                 const lat = lastTrackLat || 33.5902;
                 const lng = lastTrackLng || 130.4207;
 
-                // Open-Meteoから過去31日分の1時間ごとのデータを一括取得
                 const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=temperature_2m,weathercode&past_days=31&forecast_days=1&timezone=Asia%2FTokyo`);
                 if (!res.ok) throw new Error("気象履歴の取得に失敗しました");
                 const data = await res.json();
@@ -910,42 +970,64 @@
                 const times = data.hourly.time;
                 const codes = data.hourly.weathercode;
                 const temps = data.hourly.temperature_2m;
+                
                 let updatedCount = 0;
+                let newSyncEndStr = syncEndStr;
 
-                currentLog = currentLog.map(item => {
-                    if (targetDates.includes(item.dateStr)) {
-                        // ログの時間をAPIのフォーマット(YYYY-MM-DDTHH:00)に変換
-                        const parts = item.timestamp.split(" ");
-                        const dParts = parts[0].split("-");
-                        const padM = String(dParts[1]).padStart(2, '0');
-                        const padD = String(dParts[2]).padStart(2, '0');
-                        const padH = String(item.hour).padStart(2, '0');
-                        const targetTimeStr = `${dParts[0]}-${padM}-${padD}T${padH}:00`;
+                // 古い日から1日ずつチェック
+                for (const dateStr of targetDates) {
+                    let dateSuccess = true;
+                    let itemsToUpdate = [];
 
-                        const idx = times.indexOf(targetTimeStr);
-                        if (idx !== -1) {
-                            const c = codes[idx];
-                            let w = '晴れ';
-                            if ([0,1,2,3].includes(c)) w = '晴れ';
-                            else if ([51,53,55,61,63,65,80,81,82].includes(c)) w = '雨';
-                            else w = '曇/雪';
+                    for (let item of currentLog) {
+                        // 20度晴れクレンジングのため入っていても一度は上書きを試みる。ただしカウントや成否判定から「足跡」は完全に除外。
+                        if (item.dateStr === dateStr && item.type !== '足跡') {
+                            const parts = item.timestamp.split(" ");
+                            const dParts = parts[0].split("-");
+                            const padM = String(dParts[1]).padStart(2, '0');
+                            const padD = String(dParts[2]).padStart(2, '0');
+                            const padH = String(item.hour).padStart(2, '0');
+                            const targetTimeStr = `${dParts[0]}-${padM}-${padD}T${padH}:00`;
 
-                            item.weather = w;
-                            item.temp = temps[idx];
-                            updatedCount++;
+                            const idx = times.indexOf(targetTimeStr);
+                            if (idx !== -1 && codes[idx] !== null && temps[idx] !== null && codes[idx] !== undefined) {
+                                const c = codes[idx];
+                                let w = '晴れ';
+                                if ([0,1,2,3].includes(c)) w = '晴れ';
+                                else if ([51,53,55,61,63,65,80,81,82].includes(c)) w = '雨';
+                                else w = '曇/雪';
+                                itemsToUpdate.push({ item, w, temp: temps[idx] });
+                            } else {
+                                // 1点でもAPIが不調（null）ならこの日の同期は失敗とし、ブレーキをかける
+                                dateSuccess = false;
+                                break;
+                            }
                         }
                     }
-                    return item;
-                });
 
-                saveState(); // 変更前に状態を記録
-                localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
-                targetDates.forEach(d => completedDates.push(d));
-                localStorage.setItem('completed_weather_dates', JSON.stringify(completedDates));
+                    if (dateSuccess) {
+                        itemsToUpdate.forEach(update => {
+                            update.item.weather = update.w;
+                            update.item.temp = update.temp;
+                            updatedCount++;
+                        });
+                        newSyncEndStr = dateStr; // 成功した日付まで終了日を伸ばす
+                    } else {
+                        // 失敗した時点でループを完全離脱。これ以降の未来日は終了日に含めない
+                        break;
+                    }
+                }
 
-                alert(`${targetDates.length}日分（計${updatedCount}件）の気象データを完全補完しました！\n※取得済み期間は二度と再取得しません。`);
+                if (updatedCount > 0) {
+                    saveState();
+                    localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
+                    localStorage.setItem('weather_sync_end', newSyncEndStr);
+                    alert(`気象データの補正が完了しました。\n補完済み期間を【 ${newSyncEndStr} 】まで前進させました。（計${updatedCount}件のピンを補正）`);
+                    updateView();
+                } else {
+                    alert("APIから有効な気象データが取得できなかったため、期間の更新を保留しました。");
+                }
                 document.getElementById('status').innerText = "システム稼働中";
-                updateView();
             } catch (e) {
                 alert("エラー: " + e.message);
                 document.getElementById('status').innerText = "通信エラー";
