@@ -73,6 +73,10 @@
             <button class="btn-log btn-via" id="btn-v" onclick="recordLocation('経由降車')">経由</button>
             <button class="btn-log btn-dropoff" id="btn-d" onclick="recordLocation('降車')">降車！</button>
         </div>
+        <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <button id="btn-undo" onclick="undo()" style="flex:1; height:34px; font-size:12px; font-weight:bold; border-radius:6px; border:1px solid #ced4da; background:#fff; cursor:pointer;" disabled>↩️ 戻す (3件まで)</button>
+            <button id="btn-redo" onclick="redo()" style="flex:1; height:34px; font-size:12px; font-weight:bold; border-radius:6px; border:1px solid #ced4da; background:#fff; cursor:pointer;" disabled>↪️ 進む</button>
+        </div>
     </div>
 
     <div id="map"></div>
@@ -181,11 +185,55 @@
         let lastTrackLng = null;
         let lastTrackTime = 0;
 
+        // アンドゥ・リドゥ履歴管理スタック（指定通り3件分を厳格にキープ）
+        let undoStack = [];
+        let redoStack = [];
+
+        function saveState() {
+            const currentData = localStorage.getItem('map_plot_log') || '[]';
+            if (undoStack.length === 0 || undoStack[undoStack.length - 1] !== currentData) {
+                undoStack.push(currentData);
+                if (undoStack.length > 3) undoStack.shift(); 
+            }
+            redoStack = []; 
+            updateHistoryButtons();
+        }
+
+        function undo() {
+            if (undoStack.length === 0) return;
+            const currentData = localStorage.getItem('map_plot_log') || '[]';
+            redoStack.push(currentData);
+            
+            const previousData = undoStack.pop();
+            localStorage.setItem('map_plot_log', previousData);
+            updateHistoryButtons();
+            updateView();
+            document.getElementById('status').innerText = "↩️ アンドゥ（一手戻す）";
+        }
+
+        function redo() {
+            if (redoStack.length === 0) return;
+            const currentData = localStorage.getItem('map_plot_log') || '[]';
+            undoStack.push(currentData);
+            
+            const nextData = redoStack.pop();
+            localStorage.setItem('map_plot_log', nextData);
+            updateHistoryButtons();
+            updateView();
+            document.getElementById('status').innerText = "↪️ リドゥ（一手進める）";
+        }
+
+        function updateHistoryButtons() {
+            document.getElementById('btn-undo').disabled = (undoStack.length === 0);
+            document.getElementById('btn-redo').disabled = (redoStack.length === 0);
+        }
+
         // --- 起動処理 ---
         window.onload = function() {
             initTimeDropdowns();
             autoCleanOldTracks(); 
             onModeChange();
+            updateHistoryButtons(); // 起動時に履歴ボタンの状態を反映
             
             // トリガー1：起動時強制取得ロジック
             if (navigator.geolocation) {
@@ -373,6 +421,7 @@
                         dateStr: `${year}-${month}-${date}` 
                     };
                     
+                    saveState(); // 変更前に状態を記録
                     let currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
                     currentLog.push(newRecord);
                     localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
@@ -453,6 +502,7 @@
                 hour: hour, lat: lat, lng: lng, weather: weather, temp: temp, env_time: envTime, dateStr: `${year}-${month}-${date}` 
             };
 
+            saveState(); // 変更前に状態を記録
             let currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
             currentLog.push(newTrack);
             localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
@@ -480,6 +530,7 @@
             });
 
             if (updated) {
+                saveState(); // 変更前に状態を記録
                 localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
             }
         }
@@ -507,11 +558,12 @@
             }, { enableHighAccuracy: true, timeout: 10000 });
         }
 
-        
+
         function convertRecord(id, newType) {
             let currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
             const idx = currentLog.findIndex(item => item.id === id);
             if (idx !== -1) {
+                saveState(); // 変更前に状態を記録
                 currentLog[idx].type = newType;
                 localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
                 document.getElementById('status').innerText = `ステータスを[${newType}]に変換しました。`;
@@ -601,10 +653,7 @@
                 const tempStr = (item.temp !== null && item.temp !== undefined) ? item.temp.toFixed(1) + '℃' : '--℃';
                 const weatherStr = item.weather || '未補完';
 
-                // 足跡データは絶対に固定。格上げされたピンのみドラッグ移動を許可
-                const isDraggable = item.type !== '足跡';
-                const dragNotice = isDraggable ? `<div style="font-size:10px; color:#888; margin-top:4px;">※長押しで位置修正が可能</div>` : '';
-
+                // 🛑 地図スクロール時の誤作動を完全に防ぐため、ピン移動（ドラッグ）機能を廃止
                 const popupText = `
                     <div style="min-width: 140px; text-align:center;">
                         <span style="font-size:11px; color:#666;">${item.timestamp}</span><br>
@@ -614,18 +663,11 @@
                         ${item.type !== '経由降車' ? `<button class="convert-btn" style="background:#ffc107; color:#212529;" onclick="convertRecord(${item.id}, '経由降車')">経由に変換</button>` : ''}
                         ${item.type !== '降車' ? `<button class="convert-btn" style="background:#dc3545;" onclick="convertRecord(${item.id}, '降車')">降車に変換</button>` : ''}
                         ${item.type !== '足跡' ? `<button class="convert-btn" style="background:#6c757d;" onclick="convertRecord(${item.id}, '足跡')">足跡に格下げ</button>` : ''}
-                        ${dragNotice}
                     </div>
                 `;
 
-                const marker = L.marker([item.lat, item.lng], { icon: markerIcon, draggable: isDraggable }).bindPopup(popupText).addTo(markersLayer);
-                
-                if (isDraggable) {
-                    marker.on('dragend', function(e) {
-                        const newPos = e.target.getLatLng();
-                        updateRecordLocation(item.id, newPos.lat, newPos.lng);
-                    });
-                }
+                // draggableを一律falseに固定
+                L.marker([item.lat, item.lng], { icon: markerIcon, draggable: false }).bindPopup(popupText).addTo(markersLayer);
             });
 
             if (showLines && currentLog.length > 1) {
@@ -747,7 +789,8 @@
             reader.onload = function(e) {
                 const text = e.target.result; const lines = text.split("\n");
                 let currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
-                let count = 0;
+                let newCount = 0;
+                let updateCount = 0;
 
                 for (let i = 1; i < lines.length; i++) {
                     const line = lines[i].trim(); if (!line) continue;
@@ -759,16 +802,23 @@
                     const temp = parts[8] ? parseFloat(parts[8]) : 20.0;
                     const dateStr = parts[9] ? parts[9].trim() : timestamp.split(" ")[0];
 
-                    if (type === '足跡') continue; 
+                    // 足跡データの除外処理を完全に撤廃。同一IDによる上書き復元を可能にする
 
                     const importedRecord = { id: id, type: type, timestamp: timestamp, day: day, hour: hour, lat: lat, lng: lng, weather: weather, temp: temp, dateStr: dateStr };
                     const existingIndex = currentLog.findIndex(item => item.id === id);
 
-                    if (existingIndex !== -1) { currentLog[existingIndex] = importedRecord; } 
-                    else { currentLog.push(importedRecord); count++; }
+                    if (existingIndex !== -1) { 
+                        currentLog[existingIndex] = importedRecord; 
+                        updateCount++; // 上書き数を加算
+                    } 
+                    else { 
+                        currentLog.push(importedRecord); 
+                        newCount++; // 新規追加数を加算
+                    }
                 }
+                saveState();
                 localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
-                alert(`乗降データのインポートが完了しました（新規: ${count}件）`);
+                alert(`インポート完了（新規追加: ${newCount}件 / 正確に上書き復元: ${updateCount}件）`);
                 updateView(); input.value = "";
             };
             reader.readAsText(file);
@@ -888,6 +938,7 @@
                     return item;
                 });
 
+                saveState(); // 変更前に状態を記録
                 localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
                 targetDates.forEach(d => completedDates.push(d));
                 localStorage.setItem('completed_weather_dates', JSON.stringify(completedDates));
