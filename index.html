@@ -187,6 +187,7 @@
 
         // 【追加】タップされた運行グループ（前回の降車〜今回の降車）を記憶する変数
         let activeTripId = null;
+        let lastClickedId = null; // ポップアップを維持するためのピンID記憶用
 
         // アンドゥ・リドゥ履歴管理スタック（指定通り3件分を厳格にキープ）
         let undoStack = [];
@@ -700,14 +701,21 @@
 
                 const marker = L.marker([item.lat, item.lng], { icon: markerIcon, draggable: false }).bindPopup(popupText).addTo(markersLayer);
                 
-                // ピンをタップした際、その運行全体を記憶して再描画
+                // ピンをタップした際、運行グループとピンのユニークIDを記憶して再描画
                 marker.on('click', () => {
                     activeTripId = item.tripGrp;
+                    lastClickedId = item.id;
                     updateView();
                 });
 
                 if (isHighlighted) {
                     marker.setZIndexOffset(2000); // 選択された運行のピンマークを前面へ
+                }
+
+                // 【修正】画面の再描画（ハイライト）が完了した直後に、タップされたピンのメニューを自動展開
+                if (lastClickedId === item.id) {
+                    setTimeout(() => { marker.openPopup(); }, 1);
+                    lastClickedId = null;
                 }
             });
 
