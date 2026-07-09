@@ -701,10 +701,16 @@
 
                 const marker = L.marker([item.lat, item.lng], { icon: markerIcon, draggable: false }).bindPopup(popupText).addTo(markersLayer);
                 
-                // ピンをタップした際、運行グループとピンのユニークIDを記憶して再描画
+                // 【変更】1タップ目で運行全体をハイライトし、すでに選択中（2タップ目）ならポップアップを表示
                 marker.on('click', () => {
-                    activeTripId = item.tripGrp;
-                    lastClickedId = item.id;
+                    if (activeTripId === item.tripGrp) {
+                        // すでにこの運行グループが選択されているなら、2タップ目としてポップアップ表示を要求
+                        lastClickedId = item.id;
+                    } else {
+                        // 未選択状態なら、まずは運行グループのハイライトのみを実行（ポップアップは出さない）
+                        activeTripId = item.tripGrp;
+                        lastClickedId = null;
+                    }
                     updateView();
                 });
 
@@ -712,7 +718,7 @@
                     marker.setZIndexOffset(2000); // 選択された運行のピンマークを前面へ
                 }
 
-                // 【修正】画面の再描画（ハイライト）が完了した直後に、タップされたピンのメニューを自動展開
+                // 2タップ目の条件を満たしていた場合のみ、再描画の直後にポップアップメニューを自動展開
                 if (lastClickedId === item.id) {
                     setTimeout(() => { marker.openPopup(); }, 1);
                     lastClickedId = null;
