@@ -574,6 +574,21 @@
             }
         }
 
+        // 【追加】足跡に格下げされたレコードのみを安全に完全削除する関数
+        function deleteRecord(id) {
+            let currentLog = JSON.parse(localStorage.getItem('map_plot_log')) || [];
+            const idx = currentLog.findIndex(item => item.id === id);
+            if (idx !== -1) {
+                if (currentLog[idx].type !== '足跡') return; // 二段階防衛：足跡以外は絶対にスルー（誤爆ガード）
+                
+                saveState(); // 削除前に3件までのアンドゥ履歴へ自動退避
+                currentLog.splice(idx, 1);
+                localStorage.setItem('map_plot_log', JSON.stringify(currentLog));
+                document.getElementById('status').innerText = "❌ 足跡データを1点、完全に削除しました";
+                updateView();
+            }
+        }
+
         function updateView() {
             markersLayer.clearLayers();
             linesLayer.clearLayers();
@@ -679,6 +694,7 @@
                         ${item.type !== '経由降車' ? `<button class="convert-btn" style="background:#ffc107; color:#212529;" onclick="convertRecord(${item.id}, '経由降車')">経由に変換</button>` : ''}
                         ${item.type !== '降車' ? `<button class="convert-btn" style="background:#dc3545;" onclick="convertRecord(${item.id}, '降車')">降車に変換</button>` : ''}
                         ${item.type !== '足跡' ? `<button class="convert-btn" style="background:#6c757d;" onclick="convertRecord(${item.id}, '足跡')">足跡に格下げ</button>` : ''}
+                        ${item.type === '足跡' ? `<button class="convert-btn" style="background:#dc3545; margin-top:6px;" onclick="deleteRecord(${item.id})">❌ この足を完全に削除</button>` : ''}
                     </div>
                 `;
 
